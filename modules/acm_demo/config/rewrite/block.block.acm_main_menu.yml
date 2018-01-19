@@ -11,7 +11,7 @@ dependencies:
 _core: {  }
 id: acm_main_menu
 theme: acm
-region: header_2_left
+region: header_2_right
 weight: -6
 provider: null
 plugin: 'system_menu_block:main'

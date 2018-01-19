@@ -1,0 +1,7 @@
+langcode: en
+status: true
+dependencies: {  }
+id: product-categories
+label: 'Product categories'
+description: ''
+locked: false

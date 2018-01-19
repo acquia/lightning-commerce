@@ -1,0 +1,24 @@
+config_rewrite: replace
+langcode: en
+status: true
+dependencies:
+  config:
+    - system.menu.product-categories
+  module:
+    - system
+  theme:
+    - acm
+id: productcategories
+theme: acm
+region: header_2_left
+weight: -8
+provider: null
+plugin: 'system_menu_block:product-categories'
+settings:
+  id: 'system_menu_block:product-categories'
+  label: 'Product categories'
+  provider: system
+  label_display: '0'
+  level: 1
+  depth: 0
+visibility: {  }

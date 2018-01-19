@@ -12,7 +12,8 @@
         "drupal/acq_commerce": "~1.0.0@BETA",
         "drupal/admin_toolbar": "^1.21",
         "drupal/migrate_default_content": "~2.0.0@ALPHA",
-        "drupal/page_manager": "~4.0.0@BETA"
+        "drupal/page_manager": "~4.0.0@BETA",
+        "drupal/taxonomy_menu": "~3.x-dev"
     },
     "repositories": [
         {
@@ -39,6 +40,9 @@
             },
             "drupal/page_manager": {
                 "2876880 - page_variant entity type does not exist when installing or enabling":"https://www.drupal.org/files/issues/2876880-page-varient-cache-2.patch"
+            },
+            "drupal/taxonomy_menu": {
+                "2861460 - Menu order reset": "https://www.drupal.org/files/issues/menu-order-reset-2861460-6.patch"
             }
         }
     }

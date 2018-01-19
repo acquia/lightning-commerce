@@ -8,3 +8,4 @@ dependencies:
   - config_rewrite
   - migrate_default_content
   - page_manager
+  - taxonomy_menu

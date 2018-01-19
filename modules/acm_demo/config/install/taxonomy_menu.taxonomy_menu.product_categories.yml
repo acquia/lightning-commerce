@@ -1,0 +1,15 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - system.menu.product-categories
+    - taxonomy.vocabulary.acq_product_category
+id: product_categories
+label: 'Product categories'
+vocabulary: acq_product_category
+menu: product-categories
+expanded: true
+depth: 8
+menu_parent: 'product-categories:'
+description_field_name: null
+use_term_weight_order: true
