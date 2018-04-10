@@ -37,7 +37,7 @@ function acm_demo_install() {
   $editable_mdf_settings->set('source_dir', $source_dir)->save();
 
   // Enable ACM theme.
-  \Drupal::service('theme_installer')->install(['acm']);
-  \Drupal::service('theme_handler')->setDefault('acm');
+  \Drupal::service('theme_installer')->install(['acm_demo_theme']);
+  \Drupal::service('theme_handler')->setDefault('acm_demo_theme');
 
 }

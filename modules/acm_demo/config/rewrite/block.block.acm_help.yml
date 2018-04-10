@@ -5,10 +5,10 @@ dependencies:
   module:
     - help
   theme:
-    - acm
+    - acm_demo_theme
 _core: {  }
 id: acm_help
-theme: acm
+theme: acm_demo_theme
 region: content
 weight: -6
 provider: null

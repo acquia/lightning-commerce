@@ -3,12 +3,12 @@ status: true
 dependencies:
   config:
     - field.storage.node.field_related_products
-    - node.type.acq_product
-    - node.type.acq_promotion
-id: node.acq_promotion.field_related_products
+    - node.type.acm_product
+    - node.type.acm_promotion
+id: node.acm_promotion.field_related_products
 field_name: field_related_products
 entity_type: node
-bundle: acq_promotion
+bundle: acm_promotion
 label: 'Related products'
 description: ''
 required: false
@@ -19,7 +19,7 @@ settings:
   handler: 'default:node'
   handler_settings:
     target_bundles:
-      acq_product: acq_product
+      acm_product: acm_product
     sort:
       field: _none
     auto_create: false

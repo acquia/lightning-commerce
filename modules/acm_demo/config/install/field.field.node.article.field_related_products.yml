@@ -3,7 +3,7 @@ status: true
 dependencies:
   config:
     - field.storage.node.field_related_products
-    - node.type.acq_product
+    - node.type.acm_product
     - node.type.article
 id: node.article.field_related_products
 field_name: field_related_products
@@ -19,7 +19,7 @@ settings:
   handler: 'default:node'
   handler_settings:
     target_bundles:
-      acq_product: acq_product
+      acm_product: acm_product
     sort:
       field: _none
     auto_create: false

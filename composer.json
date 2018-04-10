@@ -14,7 +14,7 @@
         "acquia/lightning": "~2.2.5",
         "drupal/config_rewrite": "~1.1",
         "drupal/core": "~8.4.3",
-        "drupal/acq_commerce": "~1.0.0@BETA",
+        "drupal/acquia_commercemanager": "~1.0.0@BETA",
         "drupal/admin_toolbar": "^1.21",
         "drupal/migrate_default_content": "~2.0.0@ALPHA",
         "drupal/page_manager": "~4.0.0@BETA",

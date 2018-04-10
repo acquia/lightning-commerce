@@ -8,9 +8,9 @@ dependencies:
     - system
     - views
   theme:
-    - acm
+    - acm_demo_theme
 id: views_block__frontpage_block_1
-theme: acm
+theme: acm_demo_theme
 region: content
 weight: 0
 provider: null

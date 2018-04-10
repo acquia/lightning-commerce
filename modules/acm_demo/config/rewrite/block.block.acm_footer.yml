@@ -7,10 +7,10 @@ dependencies:
   module:
     - system
   theme:
-    - acm
+    - acm_demo_theme
 _core: {  }
 id: acm_footer
-theme: acm
+theme: acm_demo_theme
 region: footer_middle
 weight: -6
 provider: null

@@ -2,11 +2,11 @@ global:
   version: VERSION
   css:
     base:
-      css/acm.css: {}
+      css/acm_demo_theme.css: {}
       https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css: { external: true, minified: true }
   js:
     https://cdnjs.cloudflare.com/ajax/libs/foundation/6.4.3/js/foundation.min.js: { weight: -1, external: true, minified: true }
-    js/acm.js: { weight: 0 }
+    js/acm_demo_theme.js: { weight: 0 }
   dependencies:
     - core/jquery
     - core/jquery.once

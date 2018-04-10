@@ -7,9 +7,9 @@ dependencies:
   module:
     - system
   theme:
-    - acm
+    - acm_demo_theme
 id: productcategories
-theme: acm
+theme: acm_demo_theme
 region: header_2_left
 weight: -8
 provider: null

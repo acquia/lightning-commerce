@@ -4,11 +4,11 @@ dependencies:
   config:
     - field.storage.node.field_cover_image
     - media.type.image
-    - node.type.acq_promotion
-id: node.acq_promotion.field_cover_image
+    - node.type.acm_promotion
+id: node.acm_promotion.field_cover_image
 field_name: field_cover_image
 entity_type: node
-bundle: acq_promotion
+bundle: acm_promotion
 label: 'Cover image'
 description: ''
 required: false

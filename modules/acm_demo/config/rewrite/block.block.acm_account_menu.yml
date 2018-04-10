@@ -7,10 +7,10 @@ dependencies:
   module:
     - system
   theme:
-    - acm
+    - acm_demo_theme
 _core: {  }
 id: acm_account_menu
-theme: acm
+theme: acm_demo_theme
 region: header_1_right
 weight: -6
 provider: null

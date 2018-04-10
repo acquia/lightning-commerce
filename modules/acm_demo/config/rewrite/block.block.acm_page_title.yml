@@ -6,10 +6,10 @@ dependencies:
     - ctools
     - system
   theme:
-    - acm
+    - acm_demo_theme
 _core: {  }
 id: acm_page_title
-theme: acm
+theme: acm_demo_theme
 region: content
 weight: -5
 provider: null
@@ -23,7 +23,7 @@ visibility:
   'entity_bundle:node':
     id: 'entity_bundle:node'
     bundles:
-      acq_product: acq_product
+      acm_product: acm_product
       article: article
     negate: true
     context_mapping:

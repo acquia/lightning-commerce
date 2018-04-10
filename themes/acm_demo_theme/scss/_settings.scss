@@ -93,7 +93,7 @@ $global-radius: 0;
 $global-menu-padding: 0.7rem 1rem;
 $global-menu-nested-margin: 1rem;
 $global-text-direction: ltr;
-$global-flexbox: true;
+$global-flexbox: false;
 $global-prototype-breakpoints: false;
 $global-button-cursor: auto;
 $global-color-pick-contrast-tolerance: 0;
@@ -124,7 +124,7 @@ $grid-column-gutter: (
         medium: 30px,
 );
 $grid-column-align-edge: true;
-$grid-column-alias: 'columns';
+$grid-column-alias: false;
 $block-grid-max: 8;
 
 // 4. Base Typography
@@ -855,7 +855,7 @@ $topbar-unstack-breakpoint: medium;
 // 56. Xy Grid
 // -----------
 
-$xy-grid: true;
+$xy-grid: false;
 $grid-container: $global-width;
 $grid-columns: 12;
 $grid-margin-gutters: (

@@ -3,10 +3,10 @@ langcode: en
 status: true
 dependencies:
   theme:
-    - acm
+    - acm_demo_theme
 _core: {  }
 id: acm_local_tasks
-theme: acm
+theme: acm_demo_theme
 region: content
 weight: -3
 provider: null

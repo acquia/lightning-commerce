@@ -8,10 +8,10 @@ dependencies:
     - system
     - views
   theme:
-    - acm
+    - acm_demo_theme
 _core: {  }
 id: acm_search
-theme: acm
+theme: acm_demo_theme
 region: content
 weight: -2
 provider: null

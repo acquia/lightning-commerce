@@ -17,11 +17,11 @@ use Drupal\node\NodeInterface;
  * @param string $langcode
  *   Langcode string.
  */
-function acm_demo_acq_sku_product_node_alter(NodeInterface &$node, array &$product, $langcode) {
+function acm_demo_acm_sku_product_node_alter(NodeInterface &$node, array &$product, $langcode) {
   $description = (isset($product['attributes']['description'])) ? $product['attributes']['description'] : '';
 
   $categories = (isset($product['categories'])) ? $product['categories'] : [];
-  $config = \Drupal::config('acq_commerce.conductor');
+  $config = \Drupal::config('acm.connector');
   $sku_field_name = $config->get('sku_field_name') ?: 'field_skus';
   $category_field_name = $config->get('category_field_name');
   $text_format = $config->get('text_format') ?: 'rich_text';
@@ -42,7 +42,7 @@ function acm_demo_acq_sku_product_node_alter(NodeInterface &$node, array &$produ
     $terms = [];
 
     foreach ($categories as $cid) {
-      $term = \Drupal::service('acq_sku.category_repo')->loadCategoryTerm($cid);
+      $term = \Drupal::service('acm_sku.category_repo')->loadCategoryTerm($cid);
       if ($term) {
         $terms[] = $term->id();
       }

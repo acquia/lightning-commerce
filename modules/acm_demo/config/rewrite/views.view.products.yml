@@ -4,7 +4,7 @@ status: true
 dependencies:
   config:
     - core.entity_view_mode.node.teaser
-    - node.type.acq_product
+    - node.type.acm_product
   module:
     - node
     - user
@@ -131,7 +131,7 @@ display:
           table: node_field_data
           field: type
           value:
-            acq_product: acq_product
+            acm_product: acm_product
           entity_type: node
           entity_field: type
           plugin_id: bundle

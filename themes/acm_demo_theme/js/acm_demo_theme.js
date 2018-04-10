@@ -1,6 +1,6 @@
 /**
  * @file
- * Custom ACM theme behaviour.
+ * Custom ACM Demo theme behaviour.
  *
  */
 (function ($, Drupal) {

@@ -3,10 +3,10 @@ status: true
 dependencies:
   config:
     - system.menu.product-categories
-    - taxonomy.vocabulary.acq_product_category
+    - taxonomy.vocabulary.acm_product_category
 id: product_categories
 label: 'Product categories'
-vocabulary: acq_product_category
+vocabulary: acm_product_category
 menu: product-categories
 expanded: true
 depth: 8
