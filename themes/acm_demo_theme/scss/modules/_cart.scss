@@ -1,0 +1,22 @@
+.acm-mini-cart {
+  color: #000000;
+  text-align: right;
+  font-size: 0.929em;
+  margin: 0 10px;
+  padding: 0;
+}
+
+.acm-mini-cart a {
+  color: #000000;
+  border-right: 1px solid;
+  padding: 0 10px;
+}
+
+.acm-mini-cart a:hover {
+  color: #000000;
+  text-decoration: underline;
+}
+
+.acm-mini-cart a:last-child {
+  border: none;
+}
