@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - acm_cart
+  theme:
+    - acm_demo_theme
+id: cartminiblock_2
+theme: acm_demo_theme
+region: header_1_left
+weight: 0
+provider: null
+plugin: cart_mini_block
+settings:
+  id: cart_mini_block
+  label: 'Cart Mini Block'
+  provider: acm_cart
+  label_display: '0'
+visibility: {  }
