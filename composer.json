@@ -14,7 +14,7 @@
         "acquia/lightning": "~2.2.5",
         "drupal/config_rewrite": "~1.1",
         "drupal/core": "~8.4.3",
-        "drupal/acquia_commercemanager": "~1.0.0@BETA",
+        "drupal/acquia_commercemanager": "dev-ACM-853",
         "drupal/admin_toolbar": "^1.21",
         "drupal/migrate_default_content": "~2.0.0@ALPHA",
         "drupal/page_manager": "~4.0.0@BETA",
@@ -31,7 +31,7 @@
         },
         {
             "type": "vcs",
-            "url": "https://github.com/acquia/acm-drupal-modules"
+            "url": "https://github.com/mansinahar/acm-drupal-modules"
         }
     ],
     "extra": {
