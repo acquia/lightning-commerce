@@ -11,9 +11,9 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
-        "acquia/lightning": "~2.2.5",
+        "acquia/lightning": "~2",
         "drupal/config_rewrite": "~1.1",
-        "drupal/core": "~8.4.3",
+        "drupal/core": "^8",
         "drupal/acquia_commercemanager": "~1.0.0@BETA",
         "drupal/admin_toolbar": "^1.21",
         "drupal/migrate_default_content": "~2.0.0@ALPHA",
@@ -39,9 +39,6 @@
         "patches": {
             "drupal/core": {
                 "2599228 - Programmatically created translatable content type returns SQL error on content creation": "https://www.drupal.org/files/issues/2599228-31.patch"
-            },
-            "drupal/key_value_field": {
-                "2930484 - Key_value_long type base field creation fails": "https://www.drupal.org/files/issues/2930484-2.patch"
             },
             "drupal/page_manager": {
                 "2876880 - page_variant entity type does not exist when installing or enabling":"https://www.drupal.org/files/issues/2876880-page-varient-cache-2.patch"

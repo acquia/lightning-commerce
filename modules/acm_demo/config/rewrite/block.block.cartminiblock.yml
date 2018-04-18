@@ -1,3 +1,4 @@
+config_rewrite: replace
 langcode: en
 status: true
 dependencies:
@@ -5,7 +6,7 @@ dependencies:
     - acm_cart
   theme:
     - acm_demo_theme
-id: cartminiblock_2
+id: cartminiblock
 theme: acm_demo_theme
 region: header_1_left
 weight: 0

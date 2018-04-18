@@ -1,6 +1,7 @@
 .ecommerce-header {
   width: 100%;
   background-color: $white;
+  padding-top: 10px;
 
   .logo {
     height: 50px;
@@ -60,10 +61,9 @@
   }
 }
 
-
 .ecommerce-header-top {
   width: 100%;
-  background-color: darken($dark-gray,20%);
+  background-color: darken($dark-gray, 20%);
   height: 40px;
   padding: 8px 20px 10px 20px;
 
@@ -79,26 +79,26 @@
 }
 
 .ecommerce-header-top-links {
-  color: lighten($dark-gray, 100%);
+  ul.menu {
+    li {
+      display: inline;
+      padding-left: 20px;
 
-  ul li {
-    display: inline;
-    padding-left: 20px;
-  }
-
-  a {
-    color: lighten($dark-gray, 50%);
-    transition: color 0.5s ease;
-  }
-
-  a:hover {
-    color: lighten($dark-gray, 100%);
-    transition: color 0.5s ease;
+      a {
+        padding: 0;
+        color: #fffeff;
+        font-size: 0.929em;
+        &:hover {
+          color: #fffeff;
+          text-decoration: underline;
+        }
+      }
+    }
   }
 }
 
 .ecommerce-header-off-canvas {
-  background-color: darken($dark-gray,20%);
+  background-color: darken($dark-gray, 20%);
 
   .menu {
     padding: 1rem 0;
@@ -110,7 +110,7 @@
 }
 
 .ecommerce-header-mobile {
-  background-color: darken($dark-gray,20%);
+  background-color: darken($dark-gray, 20%);
   display: flex;
   padding: rem-calc(10) rem-calc(20);
   align-items: center;

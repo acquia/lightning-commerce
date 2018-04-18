@@ -9,6 +9,21 @@
  * Implements hook_install().
  */
 function lightning_commerce_install() {
-  // Add code here perform additional site information tasks, generate sample
-  // content, etc.
+  // Set the path to the logo, favicon and README file based on install
+  // directory.
+  $profilePath = drupal_get_path('profile', 'lightning_commerce');
+  \Drupal::configFactory()
+    ->getEditable('system.theme.global')
+    ->set('logo', [
+      'path' => $profilePath . '/lightning_commerce.png',
+      'url' => '',
+      'use_default' => FALSE,
+    ])
+    ->set('favicon', [
+      'mimetype' => 'image/vnd.microsoft.icon',
+      'path' => $profilePath . '/favicon.png',
+      'url' => '',
+      'use_default' => FALSE,
+    ])
+    ->save(TRUE);
 }
