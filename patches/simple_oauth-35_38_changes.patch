@@ -1,0 +1,1829 @@
+diff --git a/config/install/simple_oauth.settings.yml b/config/install/simple_oauth.settings.yml
+index cb88901..2ba294b 100644
+--- a/config/install/simple_oauth.settings.yml
++++ b/config/install/simple_oauth.settings.yml
+@@ -1,2 +1,3 @@
+ access_token_expiration: 300
+ refresh_token_expiration: 1209600
++remember_clients: true
+diff --git a/config/schema/simple_oauth.schema.yml b/config/schema/simple_oauth.schema.yml
+index b7fe8c7..aef2ecf 100644
+--- a/config/schema/simple_oauth.schema.yml
++++ b/config/schema/simple_oauth.schema.yml
+@@ -35,3 +35,6 @@ simple_oauth.settings:
+       type: path
+       label: 'Private Key'
+       description: 'The path to the private file.'
++    remember_clients:
++      type: boolean
++      label: 'Remember clients'
+diff --git a/simple_oauth.info.yml b/simple_oauth.info.yml
+index 8a08bb8..04c98e3 100644
+--- a/simple_oauth.info.yml
++++ b/simple_oauth.info.yml
+@@ -7,4 +7,4 @@ configure: oauth2_token.settings
+ dependencies:
+   - drupal:system (>=8.3)
+   - serialization
+-  - consumers
++  - consumers (>=8.x-1.0-beta3)
+diff --git a/simple_oauth.module b/simple_oauth.module
+index b769bba..1a1ba00 100644
+--- a/simple_oauth.module
++++ b/simple_oauth.module
+@@ -110,7 +110,7 @@ function simple_oauth_form_consumer_form_alter(array &$form, FormStateInterface
+   );
+   $form['roles']['widget']['#description'] .= '<br>' . $recommendation_text;
+   if (empty($form['roles']['widget']['#options'])) {
+-    drupal_set_message($recommendation_text, 'error');
++    \Drupal::service('messenger')->addMessage($recommendation_text, 'error');
+     $form['actions']['#disabled'] = TRUE;
+   }
+ 
+diff --git a/simple_oauth.services.yml b/simple_oauth.services.yml
+index 2bb62d8..650870b 100644
+--- a/simple_oauth.services.yml
++++ b/simple_oauth.services.yml
+@@ -41,6 +41,8 @@ services:
+   simple_oauth.repositories.refresh_token:
+     class: Drupal\simple_oauth\Repositories\RefreshTokenRepository
+     arguments: ['@entity_type.manager', '@serializer']
++  simple_oauth.server.response_type:
++    class: \League\OAuth2\Server\ResponseTypes\BearerTokenResponse
+   plugin.manager.oauth2_grant.processor:
+     class: Drupal\simple_oauth\Plugin\Oauth2GrantManager
+     parent: default_plugin_manager
+@@ -50,6 +52,7 @@ services:
+       - '@simple_oauth.repositories.access_token'
+       - '@simple_oauth.repositories.refresh_token'
+       - '@config.factory'
++      - '@simple_oauth.server.response_type'
+   simple_oauth.expired_collector:
+     class: Drupal\simple_oauth\ExpiredCollector
+     arguments: ['@entity_type.manager', '@datetime.time']
+@@ -64,3 +67,6 @@ services:
+   simple_oauth.key.generator:
+     class: Drupal\simple_oauth\Service\KeyGeneratorService
+     arguments: ['@simple_oauth.filesystem']
++  simple_oauth.known_clients:
++    class: \Drupal\simple_oauth\KnownClientsRepository
++    arguments: ['@user.data']
+diff --git a/simple_oauth_extras/simple_oauth_extras.routing.yml b/simple_oauth_extras/simple_oauth_extras.routing.yml
+index d0ba9a0..54da7c9 100644
+--- a/simple_oauth_extras/simple_oauth_extras.routing.yml
++++ b/simple_oauth_extras/simple_oauth_extras.routing.yml
+@@ -1,13 +1,14 @@
+ oauth2_token_extras.authorize:
+   path: '/oauth/authorize'
+   defaults:
+-   _form: '\Drupal\simple_oauth_extras\Controller\Oauth2AuthorizeForm'
++   _controller: 'Drupal\simple_oauth_extras\Controller\Oauth2AuthorizeController::authorize'
+    _title: 'Grant Access to Client'
+   methods: [GET, POST]
+   requirements:
+     _access: 'TRUE'
+   options:
+     _auth: ['cookie']
++    no_cache: TRUE
+ 
+ oauth2_token.user_debug:
+   path: '/oauth/debug'
+diff --git a/simple_oauth_extras/src/Controller/Oauth2AuthorizeController.php b/simple_oauth_extras/src/Controller/Oauth2AuthorizeController.php
+new file mode 100644
+index 0000000..2fb02e7
+--- /dev/null
++++ b/simple_oauth_extras/src/Controller/Oauth2AuthorizeController.php
+@@ -0,0 +1,202 @@
++<?php
++
++namespace Drupal\simple_oauth_extras\Controller;
++
++use Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException;
++use Drupal\Core\Config\ConfigFactoryInterface;
++use Drupal\Core\Controller\ControllerBase;
++use Drupal\Core\Form\FormBuilderInterface;
++use Drupal\Core\Messenger\MessengerInterface;
++use Drupal\Core\Routing\TrustedRedirectResponse;
++use Drupal\Core\Url;
++use Drupal\simple_oauth\Entities\UserEntity;
++use Drupal\simple_oauth\KnownClientsRepositoryInterface;
++use Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface;
++use GuzzleHttp\Psr7\Response;
++use League\OAuth2\Server\Exception\OAuthServerException;
++use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++use Symfony\Component\HttpFoundation\RedirectResponse;
++use Symfony\Component\HttpFoundation\Request;
++
++/**
++ * Oauth2AuthorizeController.
++ */
++class Oauth2AuthorizeController extends ControllerBase {
++
++  /**
++   * @var \Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface
++   */
++  protected $messageFactory;
++
++  /**
++   * @var \Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface
++   */
++  protected $grantManager;
++
++  /**
++   * @var \Drupal\Core\Form\FormBuilderInterface
++   */
++  protected $formBuilder;
++
++  /**
++   * The messenger service.
++   *
++   * @var \Drupal\Core\Messenger\MessengerInterface
++   */
++  protected $messenger;
++
++  /**
++   * The config factory.
++   *
++   * @var \Drupal\Core\Config\ConfigFactoryInterface
++   */
++  protected $configFactory;
++
++  /**
++   * The known client repository service.
++   *
++   * @var \Drupal\simple_oauth\KnownClientsRepositoryInterface
++   */
++  protected $knownClientRepository;
++
++  /**
++   * Oauth2AuthorizeController construct.
++   *
++   * @param \Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface $message_factory
++   *   The PSR-7 converter.
++   * @param \Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface $grant_manager
++   *   The plugin.manager.oauth2_grant.processor service.
++   * @param \Drupal\Core\Form\FormBuilderInterface $form_builder
++   *   The form builder.
++   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
++   *   The messenger service.
++   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
++   *   The config factory.
++   * @param \Drupal\simple_oauth\KnownClientsRepositoryInterface $known_clients_repository
++   *   The known client repository service.
++   */
++  public function __construct(HttpMessageFactoryInterface $message_factory, Oauth2GrantManagerInterface $grant_manager, FormBuilderInterface $form_builder, MessengerInterface $messenger, ConfigFactoryInterface $config_factory, KnownClientsRepositoryInterface $known_clients_repository) {
++    $this->messageFactory = $message_factory;
++    $this->grantManager = $grant_manager;
++    $this->formBuilder = $form_builder;
++    $this->messenger = $messenger;
++    $this->configFactory = $config_factory;
++    $this->knownClientRepository = $known_clients_repository;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container) {
++    return new static(
++      $container->get('psr7.http_message_factory'),
++      $container->get('plugin.manager.oauth2_grant.processor'),
++      $container->get('form_builder'),
++      $container->get('messenger'),
++      $container->get('config.factory'),
++      $container->get('simple_oauth.known_clients')
++    );
++  }
++
++  /**
++   * Authorizes the code generation or prints the confirmation form.
++   *
++   * @param \Symfony\Component\HttpFoundation\Request $request
++   *   The incoming request.
++   *
++   * @return mixed
++   *   The response.
++   */
++  public function authorize(Request $request) {
++    $client_uuid = $request->get('client_id');
++    if (empty($client_uuid)) {
++      return OAuthServerException::invalidClient()
++        ->generateHttpResponse(new Response());
++    }
++    try {
++      $consumer_storage = $this->entityTypeManager()->getStorage('consumer');
++    }
++    catch (InvalidPluginDefinitionException $exception) {
++      watchdog_exception('simple_oauth_extras', $exception);
++      return RedirectResponse::create(Url::fromRoute('<front>')->toString());
++    }
++    $client_drupal_entities = $consumer_storage
++      ->loadByProperties([
++        'uuid' => $client_uuid,
++      ]);
++    if (empty($client_drupal_entities)) {
++      return OAuthServerException::invalidClient()
++        ->generateHttpResponse(new Response());
++    }
++
++    $client_drupal_entity = reset($client_drupal_entities);
++    $is_third_party = $client_drupal_entity->get('third_party')->value;
++
++    $scopes = [];
++    if ($request->query->get('scope')) {
++      $scopes = explode(' ', $request->query->get('scope'));
++    }
++
++    // Login user may skip the grant step if the client is not third party or
++    // known.
++    if ($this->currentUser()->isAuthenticated() && !$is_third_party || $this->isKnownClient($client_uuid, $scopes)) {
++      if ($request->get('response_type') == 'code') {
++        $grant_type = 'code';
++      }
++      elseif ($request->get('response_type') == 'token') {
++        $grant_type = 'implicit';
++      }
++      else {
++        $grant_type = NULL;
++      }
++      try {
++        $server = $this->grantManager->getAuthorizationServer($grant_type);
++        $ps7_request = $this->messageFactory->createRequest($request);
++        $auth_request = $server->validateAuthorizationRequest($ps7_request);
++      }
++      catch (OAuthServerException $exception) {
++        $this->messenger->addMessage($this->t('Fatal error. Unable to get the authorization server.'));
++        watchdog_exception('simple_oauth_extras', $exception);
++        return RedirectResponse::create(Url::fromRoute('<front>')->toString());
++      }
++      if ($auth_request) {
++        $user_entity = new UserEntity();
++        $user_entity->setIdentifier($this->currentUser()->id());
++        $auth_request->setUser($user_entity);
++        $can_grant_codes = $this->currentUser()
++          ->hasPermission('grant simple_oauth codes');
++        $auth_request->setAuthorizationApproved($can_grant_codes);
++        $response = $server->completeAuthorizationRequest($auth_request,
++          new Response());
++        $redirect_response = TrustedRedirectResponse::create(
++          $response->getHeaderLine('location'),
++          $response->getStatusCode(),
++          $response->getHeaders()
++        );
++
++        return $redirect_response;
++      }
++    }
++    return $this->formBuilder->getForm('Drupal\simple_oauth_extras\Controller\Oauth2AuthorizeForm');
++  }
++
++  /**
++   * Whether the client with the given scopes is known and already authorized.
++   *
++   * @param string $client_uuid
++   *   The client UUID.
++   * @param string[] $scopes
++   *   The list of scopes.
++   *
++   * @return bool
++   *   TRUE if the client is authorized, FALSE otherwise.
++   */
++  protected function isKnownClient($client_uuid, array $scopes) {
++    if (!$this->configFactory->get('simple_oauth.settings')->get('remember_clients')) {
++      return FALSE;
++    }
++    return $this->knownClientRepository->isAuthorized($this->currentUser()->id(), $client_uuid, $scopes);
++  }
++
++}
+diff --git a/simple_oauth_extras/src/Controller/Oauth2AuthorizeForm.php b/simple_oauth_extras/src/Controller/Oauth2AuthorizeForm.php
+index 6afb99e..1dad08e 100644
+--- a/simple_oauth_extras/src/Controller/Oauth2AuthorizeForm.php
++++ b/simple_oauth_extras/src/Controller/Oauth2AuthorizeForm.php
+@@ -3,19 +3,26 @@
+ namespace Drupal\simple_oauth_extras\Controller;
+ 
+ use Drupal\Component\Utility\UrlHelper;
++use Drupal\Core\Cache\CacheableMetadata;
++use Drupal\Core\Config\ConfigFactoryInterface;
+ use Drupal\Core\Entity\EntityTypeManagerInterface;
+ use Drupal\Core\Form\FormBase;
+ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Routing\TrustedRedirectResponse;
+ use Drupal\Core\Url;
+ use Drupal\simple_oauth\Entities\UserEntity;
++use Drupal\simple_oauth\KnownClientsRepositoryInterface;
+ use Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface;
+ use GuzzleHttp\Psr7\Response;
++use League\OAuth2\Server\Entities\ScopeEntityInterface;
+ use League\OAuth2\Server\Exception\OAuthServerException;
+ use Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface;
+ use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
+ use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
++/**
++ * Authorize form.
++ */
+ class Oauth2AuthorizeForm extends FormBase {
+ 
+   /**
+@@ -43,19 +50,43 @@ class Oauth2AuthorizeForm extends FormBase {
+    */
+   protected $grantManager;
+ 
++  /**
++   * The config factory.
++   *
++   * @var \Drupal\Core\Config\ConfigFactoryInterface
++   */
++  protected $configFactory;
++
++  /**
++   * The known client repository service.
++   *
++   * @var \Drupal\simple_oauth\KnownClientsRepositoryInterface
++   */
++  protected $knownClientRepository;
++
+   /**
+    * Oauth2AuthorizeForm constructor.
+    *
+    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
++   *   The entity type manager.
+    * @param \Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface $message_factory
++   *   The message factory.
+    * @param \Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface $foundation_factory
++   *   The foundation factory.
+    * @param \Drupal\simple_oauth\Plugin\Oauth2GrantManagerInterface $grant_manager
++   *   The grant manager.
++   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
++   *   The config factory.
++   * @param \Drupal\simple_oauth\KnownClientsRepositoryInterface $known_clients_repository
++   *   The known client repository service.
+    */
+-  public function __construct(EntityTypeManagerInterface $entity_type_manager, HttpMessageFactoryInterface $message_factory, HttpFoundationFactoryInterface $foundation_factory, Oauth2GrantManagerInterface $grant_manager) {
++  public function __construct(EntityTypeManagerInterface $entity_type_manager, HttpMessageFactoryInterface $message_factory, HttpFoundationFactoryInterface $foundation_factory, Oauth2GrantManagerInterface $grant_manager, ConfigFactoryInterface $config_factory, KnownClientsRepositoryInterface $known_clients_repository) {
+     $this->entityTypeManager = $entity_type_manager;
+     $this->messageFactory = $message_factory;
+     $this->foundationFactory = $foundation_factory;
+     $this->grantManager = $grant_manager;
++    $this->configFactory = $config_factory;
++    $this->knownClientRepository = $known_clients_repository;
+   }
+ 
+   /**
+@@ -66,7 +97,9 @@ class Oauth2AuthorizeForm extends FormBase {
+       $container->get('entity_type.manager'),
+       $container->get('psr7.http_message_factory'),
+       $container->get('psr7.http_foundation_factory'),
+-      $container->get('plugin.manager.oauth2_grant.processor')
++      $container->get('plugin.manager.oauth2_grant.processor'),
++      $container->get('config.factory'),
++      $container->get('simple_oauth.known_clients')
+     );
+   }
+ 
+@@ -140,26 +173,36 @@ class Oauth2AuthorizeForm extends FormBase {
+     }
+     $client_drupal_entity = reset($client_drupal_entities);
+ 
+-    // Gather all the role ids.
+-    $scope_ids = array_merge(
+-      explode(' ', $request->get('scope')),
+-      array_map(function ($item) {
+-        return $item['target_id'];
+-      }, $client_drupal_entity->get('roles')->getValue())
+-    );
+-    $user_roles = $manager->getStorage('user_role')->loadMultiple($scope_ids);
++    $cacheablity_metadata = new CacheableMetadata();
++
+     $form['client'] = $manager->getViewBuilder('consumer')->view($client_drupal_entity);
+-    $client_drupal_entity->addCacheableDependency($form['client']);
+     $form['scopes'] = [
+       '#title' => $this->t('Permissions'),
+       '#theme' => 'item_list',
+       '#items' => [],
+     ];
+-    foreach ($user_roles as $user_role) {
+-      $user_role->addCacheableDependency($form['scopes']);
+-      $form['scopes']['#items'][] = $user_role->label();
++
++    $client_roles = [];
++    foreach ($client_drupal_entity->get('roles') as $role_item) {
++      $client_roles[$role_item->target_id] = $role_item->entity;
+     }
+ 
++    /** @var \Drupal\simple_oauth\Entities\ScopeEntityNameInterface $scope */
++    foreach ($auth_request->getScopes() as $scope) {
++      $cacheablity_metadata->addCacheableDependency($scope);
++      $form['scopes']['#items'][] = $scope->getName();
++
++      unset($client_roles[$scope->getIdentifier()]);
++    }
++
++    // Add the client roles that were not explicitly requested to the list.
++    foreach ($client_roles as $client_role) {
++      $cacheablity_metadata->addCacheableDependency($client_role);
++      $form['scopes']['#items'][] = $client_role->label();
++    }
++
++    $cacheablity_metadata->applyTo($form['scopes']);
++
+     $form['redirect_uri'] = [
+       '#type' => 'hidden',
+       '#value' => $request->get('redirect_uri') ?
+@@ -201,6 +244,14 @@ class Oauth2AuthorizeForm extends FormBase {
+         $response->getHeaders()
+       );
+       $form_state->setResponse($redirect_response);
++
++      $scopes = array_map(function (ScopeEntityInterface $scope) {
++        return $scope->getIdentifier();
++      }, $auth_request->getScopes());
++
++      if ($this->configFactory->get('simple_oauth.settings')->get('remember_clients')) {
++        $this->knownClientRepository->rememberClient($this->currentUser()->id(), $auth_request->getClient()->getIdentifier(), $scopes);
++      }
+     }
+     elseif ($params = $form_state->getValue('redirect_params')) {
+       $url = Url::fromRoute('user.login');
+diff --git a/simple_oauth_extras/tests/src/Functional/AuthCodeFunctionalTest.php b/simple_oauth_extras/tests/src/Functional/AuthCodeFunctionalTest.php
+index e15e6f8..5fb9ef7 100644
+--- a/simple_oauth_extras/tests/src/Functional/AuthCodeFunctionalTest.php
++++ b/simple_oauth_extras/tests/src/Functional/AuthCodeFunctionalTest.php
+@@ -22,6 +22,11 @@ class AuthCodeFunctionalTest extends TokenBearerFunctionalTestBase {
+    */
+   protected $redirectUri;
+ 
++  /**
++   * @var \Drupal\user\RoleInterface
++   */
++  protected $extraRole;
++
+   public static $modules = [
+     'simple_oauth_extras',
+     'simple_oauth_extras_test',
+@@ -42,6 +47,23 @@ class AuthCodeFunctionalTest extends TokenBearerFunctionalTestBase {
+     $this->grantPermissions(Role::load(RoleInterface::AUTHENTICATED_ID), [
+       'grant simple_oauth codes',
+     ]);
++    // Add a scope so we can ensure all tests have at least 2 roles. That way we
++    // can test dropping a scope and still have at least one scope.
++    $additional_scope = $this->getRandomGenerator()->name(8, TRUE);
++    Role::create([
++      'id' => $additional_scope,
++      'label' => $this->getRandomGenerator()->word(5),
++      'is_admin' => FALSE,
++    ])->save();
++    $this->scope = $this->scope . ' ' . $additional_scope;
++    // Add a random scope that is not in the base scopes list to request so we
++    // can make extra checks on it.
++    $this->extraRole = Role::create([
++      'id' => $this->getRandomGenerator()->name(8, TRUE),
++      'label' => $this->getRandomGenerator()->word(5),
++      'is_admin' => FALSE,
++    ]);
++    $this->extraRole->save();
+   }
+ 
+   /**
+@@ -58,45 +80,199 @@ class AuthCodeFunctionalTest extends TokenBearerFunctionalTestBase {
+       'query' => $valid_params,
+     ]);
+     $assert_session = $this->assertSession();
+-    $assert_session->buttonExists(t('Login'));
+-    $assert_session->responseContains(t('An external client application is requesting access'));
++    $assert_session->buttonExists('Login');
++    $assert_session->responseContains('An external client application is requesting access');
++
++    // 2. Log the user in and try again.
++    $this->drupalLogin($this->user);
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    $this->assertGrantForm();
++
++    // 3. Grant access by submitting the form and get the token back.
++    $this->drupalPostForm($this->authorizeUrl, [], 'Grant', [
++      'query' => $valid_params,
++    ]);
++    // Store the code for the second part of the flow.
++    $code = $this->getAndValidateCodeFromResponse();
++
++    // 4. Send the code to get the access token.
++    $response = $this->postGrantedCodeWithScopes($code, $this->scope);
++    $this->assertValidTokenResponse($response, TRUE);
++  }
++
++  /**
++   * Test the valid AuthCode grant if the client is non 3rd party.
++   */
++  public function testNon3rdPartyClientAuthCodeGrant() {
++    $this->client->set('third_party', FALSE);
++    $this->client->save();
++
++    $valid_params = [
++      'response_type' => 'code',
++      'client_id' => $this->client->uuid(),
++      'client_secret' => $this->clientSecret,
++    ];
++    // 1. Anonymous request invites the user to log in.
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    $assert_session = $this->assertSession();
++    $assert_session->buttonExists('Login');
++    $assert_session->responseContains('An external client application is requesting access');
++
++    // 2. Log the user in and try again. This time we should get a code
++    // immediately without granting, because the consumer is not 3rd party.
++    $this->drupalLogin($this->user);
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    // Store the code for the second part of the flow.
++    $code = $this->getAndValidateCodeFromResponse();
++
++    // 3. Send the code to get the access token, regardless of the scopes, since
++    // the consumer is trusted.
++    $response = $this->postGrantedCodeWithScopes(
++      $code,
++      $this->scope . ' ' . $this->extraRole->id()
++    );
++    $this->assertValidTokenResponse($response, TRUE);
++  }
++
++  /**
++   * Tests the remember client functionality.
++   */
++  public function testRememberClient() {
++    $valid_params = [
++      'response_type' => 'code',
++      'client_id' => $this->client->uuid(),
++      'client_secret' => $this->clientSecret,
++    ];
++    // 1. Anonymous request invites the user to log in.
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    $assert_session = $this->assertSession();
++    $assert_session->buttonExists('Login');
++    $assert_session->responseContains('An external client application is requesting access');
+ 
+     // 2. Log the user in and try again.
+     $this->drupalLogin($this->user);
+     $this->drupalGet($this->authorizeUrl->toString(), [
+       'query' => $valid_params,
+     ]);
++    $this->assertGrantForm();
++
++    // 3. Grant access by submitting the form and get the token back.
++    $this->drupalPostForm(NULL, [], 'Grant');
++
++    // Store the code for the second part of the flow.
++    $code = $this->getAndValidateCodeFromResponse();
++
++    // 4. Send the code to get the access token.
++    $response = $this->postGrantedCodeWithScopes($code, $this->scope);
++    $this->assertValidTokenResponse($response, TRUE);
++
++    // Do a second authorize request, the client is now remembered and the user
++    // does not need to confirm again.
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++
++    $code = $this->getAndValidateCodeFromResponse();
++
++    $response = $this->postGrantedCodeWithScopes($code, $this->scope);
++    $this->assertValidTokenResponse($response, TRUE);
++
++    // Do a third request with an additional scope.
++    $valid_params['scope'] = $this->extraRole->id();
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++
++    $this->assertGrantForm();
++    $this->assertSession()->pageTextContains($this->extraRole->label());
++    $this->drupalPostForm(NULL, [], 'Grant');
++
++    $code = $this->getAndValidateCodeFromResponse();
++
++    $response = $this->postGrantedCodeWithScopes($code, $this->scope . ' ' . $this->extraRole->id());
++    $this->assertValidTokenResponse($response, TRUE);
++
++    // Do another request with the additional scope, this scope is now remembered too.
++    $valid_params['scope'] = $this->extraRole->id();
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    $code = $this->getAndValidateCodeFromResponse();
++
++    $response = $this->postGrantedCodeWithScopes($code, $this->scope . ' ' . $this->extraRole->id());
++    $this->assertValidTokenResponse($response, TRUE);
++
++    // Disable the remember clients feature, make sure that the redirect doesn't happen automatically anymore.
++    $this->config('simple_oauth.settings')->set('remember_clients', FALSE)->save();
++
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++
++    $this->assertGrantForm();
++  }
++
++  /**
++   * Helper function to assert the current page is a valid grant form.
++   *
++   * @throws \Behat\Mink\Exception\ElementNotFoundException
++   * @throws \Behat\Mink\Exception\ExpectationException
++   */
++  protected function assertGrantForm() {
+     $assert_session = $this->assertSession();
+     $assert_session->statusCodeEquals(200);
+     $assert_session->titleEquals('Grant Access to Client | Drupal');
+     $assert_session->buttonExists('Grant');
+     $assert_session->responseContains('Permissions');
++  }
+ 
+-    // 3. Grant access by submitting the form and get the token back.
+-    $this->drupalPostForm($this->authorizeUrl, [], 'Grant', [
+-      'query' => $valid_params,
+-    ]);
++  /**
++   * Get the code in the response after granting access to scopes.
++   *
++   * @return mixed
++   *
++   * @throws \Behat\Mink\Exception\ExpectationException
++   */
++  protected function getAndValidateCodeFromResponse() {
+     $assert_session = $this->assertSession();
+     $session = $this->getSession();
+     $assert_session->statusCodeEquals(200);
+     $parsed_url = parse_url($session->getCurrentUrl());
+     $parsed_query = \GuzzleHttp\Psr7\parse_query($parsed_url['query']);
+     $this->assertArrayHasKey('code', $parsed_query);
+-    // Store the code for the second part of the flow.
+-    $code = $parsed_query['code'];
++    return $parsed_query['code'];
++  }
+ 
+-    // 4. Send the code to get the access token.
++  /**
++   * Posts the code and requests access to the scopes.
++   *
++   * @param string $code
++   *   The granted code.
++   * @param string $scopes
++   *   The list of scopes to request access to.
++   *
++   * @return \Psr\Http\Message\ResponseInterface
++   *   The response.
++   */
++  protected function postGrantedCodeWithScopes($code, $scopes) {
+     $valid_payload = [
+       'grant_type' => 'authorization_code',
+       'client_id' => $this->client->uuid(),
+       'client_secret' => $this->clientSecret,
+       'code' => $code,
+-      'scope' => $this->scope,
++      'scope' => $scopes,
+     ];
+-    $response = $this->request('POST', $this->url, [
++    return $this->request('POST', $this->url, [
+       'form_params' => $valid_payload,
+     ]);
+-    $this->assertValidTokenResponse($response, TRUE);
+   }
+ 
+ }
+diff --git a/simple_oauth_extras/tests/src/Functional/ClientCredentialsFunctionalTest.php b/simple_oauth_extras/tests/src/Functional/ClientCredentialsFunctionalTest.php
+index d99fc76..2c4a568 100644
+--- a/simple_oauth_extras/tests/src/Functional/ClientCredentialsFunctionalTest.php
++++ b/simple_oauth_extras/tests/src/Functional/ClientCredentialsFunctionalTest.php
+@@ -71,7 +71,7 @@ class ClientCredentialsFunctionalTest extends TokenBearerFunctionalTestBase {
+       $response = $this->request('POST', $this->url, [
+         'form_params' => $invalid_payload,
+       ]);
+-      $parsed_response = Json::decode($response->getBody()->getContents());
++      $parsed_response = Json::decode((string) $response->getBody());
+       $this->assertSame($value['error'], $parsed_response['error'], sprintf('Correct error code %s for %s.', $value['error'], $key));
+       $this->assertSame($value['code'], $response->getStatusCode(), sprintf('Correct status code %d for %s.', $value['code'], $key));
+     }
+@@ -108,7 +108,7 @@ class ClientCredentialsFunctionalTest extends TokenBearerFunctionalTestBase {
+       $response = $this->request('POST', $this->url, [
+         'form_params' => $invalid_payload,
+       ]);
+-      $parsed_response = Json::decode($response->getBody()->getContents());
++      $parsed_response = Json::decode((string) $response->getBody());
+       $this->assertSame($value['error'], $parsed_response['error'], sprintf('Correct error code %s for %s.', $value['error'], $key));
+       $this->assertSame($value['code'], $response->getStatusCode(), sprintf('Correct status code %d for %s.', $value['code'], $key));
+     }
+diff --git a/simple_oauth_extras/tests/src/Functional/ImplicitFunctionalTest.php b/simple_oauth_extras/tests/src/Functional/ImplicitFunctionalTest.php
+index e1795be..16f8d44 100644
+--- a/simple_oauth_extras/tests/src/Functional/ImplicitFunctionalTest.php
++++ b/simple_oauth_extras/tests/src/Functional/ImplicitFunctionalTest.php
+@@ -57,8 +57,8 @@ class ImplicitFunctionalTest extends TokenBearerFunctionalTestBase {
+       'query' => $valid_params,
+     ]);
+     $assert_session = $this->assertSession();
+-    $assert_session->buttonExists(t('Login'));
+-    $assert_session->responseContains(t('An external client application is requesting access'));
++    $assert_session->buttonExists('Login');
++    $assert_session->responseContains('An external client application is requesting access');
+ 
+     // 2. Log the user in and try again.
+     $this->drupalLogin($this->user);
+@@ -89,4 +89,42 @@ class ImplicitFunctionalTest extends TokenBearerFunctionalTestBase {
+     $assert_session->addressMatches('/\/oauth\/test#access_token=.*&token_type=Bearer&expires_in=\d*/');
+   }
+ 
++  /**
++   * Test the valid Implicit grant if the client is non 3rd party
++   */
++  public function testValidClientImplicitGrant() {
++    $this->client->set('third_party', FALSE);
++    $this->client->save();
++    $valid_params = [
++      'response_type' => 'token',
++      'client_id' => $this->client->uuid(),
++      'client_secret' => $this->clientSecret,
++    ];
++    // 1. Anonymous request invites the user to log in.
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    $assert_session = $this->assertSession();
++    $assert_session->buttonExists('Login');
++    $assert_session->responseContains('An external client application is requesting access');
++
++    // 2. Log the user in and try again.
++    $this->drupalLogin($this->user);
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    $assert_session = $this->assertSession();
++    $assert_session->responseContains('Fatal error. Unable to get the authorization server.');
++    $this
++      ->config('simple_oauth_extras.settings')
++      ->set('use_implicit', TRUE)
++      ->save();
++    $this->drupalGet($this->authorizeUrl->toString(), [
++      'query' => $valid_params,
++    ]);
++    $assert_session = $this->assertSession();
++    $assert_session->statusCodeEquals(200);
++    $assert_session->addressMatches('/\/oauth\/test#access_token=.*&token_type=Bearer&expires_in=\d*/');
++  }
++
+ }
+diff --git a/simple_oauth_extras/tests/src/Functional/RefreshFunctionalTest.php b/simple_oauth_extras/tests/src/Functional/RefreshFunctionalTest.php
+index bb46c99..489d2dd 100644
+--- a/simple_oauth_extras/tests/src/Functional/RefreshFunctionalTest.php
++++ b/simple_oauth_extras/tests/src/Functional/RefreshFunctionalTest.php
+@@ -39,7 +39,7 @@ class RefreshFunctionalTest extends TokenBearerFunctionalTestBase {
+     $response = $this->request('POST', $this->url, [
+       'form_params' => $valid_payload,
+     ]);
+-    $body = $response->getBody()->getContents();
++    $body = (string) $response->getBody();
+     $parsed_response = Json::decode($body);
+     $this->refreshToken = $parsed_response['refresh_token'];
+   }
+@@ -64,7 +64,7 @@ class RefreshFunctionalTest extends TokenBearerFunctionalTestBase {
+     // 2. Test the valid without scopes.
+     // We need to use the new refresh token, the old one is revoked.
+     $response->getBody()->rewind();
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     $valid_payload = [
+       'grant_type' => 'refresh_token',
+       'client_id' => $this->client->uuid(),
+@@ -87,7 +87,7 @@ class RefreshFunctionalTest extends TokenBearerFunctionalTestBase {
+     $response = $this->request('POST', $this->url, [
+       'form_params' => $valid_payload,
+     ]);
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     $this->assertSame(401, $response->getStatusCode());
+     $this->assertSame('invalid_request', $parsed_response['error']);
+   }
+@@ -128,7 +128,7 @@ class RefreshFunctionalTest extends TokenBearerFunctionalTestBase {
+       $response = $this->request('POST', $this->url, [
+         'form_params' => $invalid_payload,
+       ]);
+-      $parsed_response = Json::decode($response->getBody()->getContents());
++      $parsed_response = Json::decode((string) $response->getBody());
+       $this->assertSame($value['error'], $parsed_response['error'], sprintf('Correct error code %s for %s.', $value['error'], $key));
+       $this->assertSame($value['code'], $response->getStatusCode(), sprintf('Correct status code %d for %s.', $value['code'], $key));
+     }
+@@ -170,7 +170,7 @@ class RefreshFunctionalTest extends TokenBearerFunctionalTestBase {
+       $response = $this->request('POST', $this->url, [
+         'form_params' => $invalid_payload,
+       ]);
+-      $parsed_response = Json::decode($response->getBody()->getContents());
++      $parsed_response = Json::decode((string) $response->getBody());
+       $this->assertSame($value['error'], $parsed_response['error'], sprintf('Correct error code %s for %s.', $value['error'], $key));
+       $this->assertSame($value['code'], $response->getStatusCode(), sprintf('Correct status code %d for %s.', $value['code'], $key));
+     }
+diff --git a/simple_oauth_extras/tests/src/Functional/RolesNegotiationFunctionalTest.php b/simple_oauth_extras/tests/src/Functional/RolesNegotiationFunctionalTest.php
+index 884a72e..662407b 100644
+--- a/simple_oauth_extras/tests/src/Functional/RolesNegotiationFunctionalTest.php
++++ b/simple_oauth_extras/tests/src/Functional/RolesNegotiationFunctionalTest.php
+@@ -7,6 +7,7 @@ use Drupal\Core\Url;
+ use Drupal\consumers\Entity\Consumer;
+ use Drupal\Tests\BrowserTestBase;
+ use Drupal\Tests\simple_oauth\Functional\RequestHelperTrait;
++use Drupal\Tests\simple_oauth\Functional\SimpleOauthTestTrait;
+ use Drupal\user\Entity\Role;
+ 
+ /**
+@@ -15,6 +16,7 @@ use Drupal\user\Entity\Role;
+ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+ 
+   use RequestHelperTrait;
++  use SimpleOauthTestTrait;
+ 
+   public static $modules = [
+     'image',
+@@ -50,16 +52,6 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+    */
+   protected $httpClient;
+ 
+-  /**
+-   * @var string
+-   */
+-  protected $privateKeyPath;
+-
+-  /**
+-   * @var string
+-   */
+-  protected $publicKeyPath;
+-
+   /**
+    * @var string
+    */
+@@ -115,23 +107,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+     ]);
+     $this->client->save();
+ 
+-    // Configure the public and private keys.
+-    $path = $this->container->get('module_handler')
+-      ->getModule('simple_oauth')
+-      ->getPath();
+-    $temp_dir = sys_get_temp_dir();
+-    $public_path = '/' . $path . '/tests/certificates/public.key';
+-    $private_path = '/' . $path . '/tests/certificates/private.key';
+-    file_put_contents($temp_dir . '/public.key', file_get_contents(DRUPAL_ROOT . $public_path));
+-    file_put_contents($temp_dir . '/private.key', file_get_contents(DRUPAL_ROOT . $private_path));
+-    chmod($temp_dir . '/public.key', 0660);
+-    chmod($temp_dir . '/private.key', 0660);
+-    $this->publicKeyPath = $temp_dir . '/public.key';
+-    $this->privateKeyPath = $temp_dir . '/private.key';
+-    $settings = $this->config('simple_oauth.settings');
+-    $settings->set('public_key', $this->publicKeyPath);
+-    $settings->set('private_key', $this->privateKeyPath);
+-    $settings->save();
++    $this->setUpKeys();
+   }
+ 
+   /**
+@@ -151,7 +127,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+         ],
+       ]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     $this->assertEquals($this->user->id(), $parsed_response['id']);
+     $this->assertEquals(['foo', 'bar', 'authenticated', 'oof'], $parsed_response['roles']);
+     $this->assertTrue($parsed_response['permissions']['view own simple_oauth entities']['access']);
+@@ -173,7 +149,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+         ],
+       ]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     // The token was successfully removed. The negotiated user is the anonymous
+     // user.
+     $this->assertEquals(0, $parsed_response['id']);
+@@ -194,7 +170,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+         ],
+       ]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     // The negotiated user is the expected user.
+     $this->assertEquals($this->user->id(), $parsed_response['id']);
+     $this->assertEquals(['foo', 'authenticated', 'oof'], $parsed_response['roles']);
+@@ -219,7 +195,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+         ],
+       ]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     $this->assertEquals($this->user->id(), $parsed_response['id']);
+     $this->assertEquals(['authenticated', 'oof'], $parsed_response['roles']);
+     $this->assertTrue($parsed_response['permissions']['delete own simple_oauth entities']['access']);
+@@ -241,7 +217,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+         ],
+       ]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     // The token was successfully removed. The negotiated user is the anonymous
+     // user.
+     $this->assertEquals(0, $parsed_response['id']);
+@@ -260,7 +236,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+         ],
+       ]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     $this->assertEquals($this->user->id(), $parsed_response['id']);
+     $this->assertEquals(['authenticated'], $parsed_response['roles']);
+     $this->assertFalse($parsed_response['permissions']['delete own simple_oauth entities']['access']);
+@@ -282,7 +258,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+         ],
+       ]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     $this->assertEquals($this->user->id(), $parsed_response['id']);
+     $this->assertEquals(['authenticated', 'oof'], $parsed_response['roles']);
+     $this->assertFalse($parsed_response['permissions']['view own simple_oauth entities']['access']);
+@@ -311,7 +287,7 @@ class RolesNegotiationFunctionalTest extends BrowserTestBase {
+       $this->url,
+       ['form_params' => $valid_payload]
+     );
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+ 
+     return $parsed_response['access_token'];
+   }
+diff --git a/src/Authentication/Provider/SimpleOauthAuthenticationProvider.php b/src/Authentication/Provider/SimpleOauthAuthenticationProvider.php
+index c87e928..06bdfcb 100644
+--- a/src/Authentication/Provider/SimpleOauthAuthenticationProvider.php
++++ b/src/Authentication/Provider/SimpleOauthAuthenticationProvider.php
+@@ -73,7 +73,14 @@ class SimpleOauthAuthenticationProvider implements SimpleOauthAuthenticationProv
+       'value' => $request->get('oauth_access_token_id'),
+     ]);
+     $token = reset($tokens);
+-    return new TokenAuthUser($token);
++
++    $account = new TokenAuthUser($token);
++
++    // Set consumer ID header on successful authentication, so negotiators
++    // will trigger correctly.
++    $request->headers->set('X-Consumer-ID', $account->getConsumer()->uuid());
++
++    return $account;
+   }
+ 
+ }
+diff --git a/src/Authentication/TokenAuthUser.php b/src/Authentication/TokenAuthUser.php
+index c796e71..0a4d949 100644
+--- a/src/Authentication/TokenAuthUser.php
++++ b/src/Authentication/TokenAuthUser.php
+@@ -29,6 +29,13 @@ class TokenAuthUser implements TokenAuthUserInterface {
+    */
+   protected $token;
+ 
++  /**
++   * The activated consumer instance.
++   *
++   * @var \Drupal\consumers\Entity\Consumer
++   */
++  protected $consumer;
++
+   /**
+    * Constructs a TokenAuthUser object.
+    *
+@@ -39,11 +46,10 @@ class TokenAuthUser implements TokenAuthUserInterface {
+    *   When there is no user.
+    */
+   public function __construct(Oauth2TokenInterface $token) {
++    $this->consumer = $token->get('client')->entity;
++
+     if (!$this->subject = $token->get('auth_user_id')->entity) {
+-      /** @var \Drupal\consumers\Entity\Consumer $client */
+-      if ($client = $token->get('client')->entity) {
+-        $this->subject = $client->get('user_id')->entity;
+-      }
++      $this->subject = $this->consumer->get('user_id')->entity;
+     }
+     if (!$this->subject) {
+       throw OAuthServerException::invalidClient();
+@@ -61,21 +67,17 @@ class TokenAuthUser implements TokenAuthUserInterface {
+   /**
+    * {@inheritdoc}
+    */
+-  public function getRoles($exclude_locked_roles = FALSE) {
+-    return array_map(function ($item) {
+-      return $item['target_id'];
+-    }, $this->token->get('scopes')->getValue());
++  public function getConsumer() {
++      return $this->consumer;
+   }
+ 
+-  /* ---------------------------------------------------------------------------
+-  All the methods below are delegated to the decorated user.
+-  --------------------------------------------------------------------------- */
+-
+   /**
+    * {@inheritdoc}
+    */
+-  public function access($operation, AccountInterface $account = NULL, $return_as_object = FALSE) {
+-    return $this->subject->access($operation, $account, $return_as_object);
++  public function getRoles($exclude_locked_roles = FALSE) {
++    return array_map(function ($item) {
++      return $item['target_id'];
++    }, $this->token->get('scopes')->getValue());
+   }
+ 
+   /**
+@@ -90,6 +92,31 @@ class TokenAuthUser implements TokenAuthUserInterface {
+     return $this->getRoleStorage()->isPermissionInRoles($permission, $this->getRoles());
+   }
+ 
++  /**
++   * Returns the role storage object.
++   *
++   * @return \Drupal\user\RoleStorageInterface
++   *   The role storage object.
++   *
++   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
++   */
++  protected function getRoleStorage() {
++    /** @var \Drupal\user\RoleStorageInterface $storage */
++    $storage = \Drupal::entityTypeManager()->getStorage('user_role');
++    return $storage;
++  }
++
++  /* ---------------------------------------------------------------------------
++  All the methods below are delegated to the decorated user.
++  --------------------------------------------------------------------------- */
++
++  /**
++   * {@inheritdoc}
++   */
++  public function access($operation, AccountInterface $account = NULL, $return_as_object = FALSE) {
++    return $this->subject->access($operation, $account, $return_as_object);
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -854,13 +881,45 @@ class TokenAuthUser implements TokenAuthUserInterface {
+   }
+ 
+   /**
+-   * Returns the role storage object.
+-   *
+-   * @return \Drupal\user\RoleStorageInterface
+-   *   The role storage object.
++   * {@inheritdoc}
+    */
+-  protected function getRoleStorage() {
+-    return \Drupal::entityTypeManager()->getStorage('user_role');
++  public function wasDefaultRevision() {
++    return $this->subject->wasDefaultRevision();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function isLatestRevision() {
++    return $this->subject->isLatestRevision();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function isLatestTranslationAffectedRevision() {
++    return $this->subject->isLatestTranslationAffectedRevision();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function isRevisionTranslationAffectedEnforced() {
++    return $this->subject->isRevisionTranslationAffectedEnforced();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function setRevisionTranslationAffectedEnforced($enforced) {
++    return $this->subject->setRevisionTranslationAffectedEnforced($enforced);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function isDefaultTranslationAffectedOnly() {
++    return $this->subject->isDefaultTranslationAffectedOnly();
+   }
+ 
+ }
+diff --git a/src/Authentication/TokenAuthUserInterface.php b/src/Authentication/TokenAuthUserInterface.php
+index 539514d..bf9b900 100644
+--- a/src/Authentication/TokenAuthUserInterface.php
++++ b/src/Authentication/TokenAuthUserInterface.php
+@@ -4,6 +4,9 @@ namespace Drupal\simple_oauth\Authentication;
+ 
+ use Drupal\user\UserInterface;
+ 
++/**
++ * @internal
++ */
+ interface TokenAuthUserInterface extends \IteratorAggregate, UserInterface {
+ 
+   /**
+@@ -14,4 +17,12 @@ interface TokenAuthUserInterface extends \IteratorAggregate, UserInterface {
+    */
+   public function getToken();
+ 
++  /**
++   * Get the activated consumer.
++   *
++   * @return \Drupal\consumers\Entity\Consumer
++   *   The activated consumer after authentication.
++   */
++  public function getConsumer();
++
+ }
+diff --git a/src/Entities/ScopeEntity.php b/src/Entities/ScopeEntity.php
+index d431de7..bcd8c52 100644
+--- a/src/Entities/ScopeEntity.php
++++ b/src/Entities/ScopeEntity.php
+@@ -2,13 +2,20 @@
+ 
+ namespace Drupal\simple_oauth\Entities;
+ 
++use Drupal\Core\Cache\RefinableCacheableDependencyTrait;
+ use Drupal\user\RoleInterface;
+-use League\OAuth2\Server\Entities\ScopeEntityInterface;
+ use League\OAuth2\Server\Entities\Traits\EntityTrait;
+ 
+-class ScopeEntity implements ScopeEntityInterface {
++class ScopeEntity implements ScopeEntityNameInterface {
+ 
+-  use EntityTrait;
++  use EntityTrait, RefinableCacheableDependencyTrait;
++
++  /**
++   * The name of this scope.
++   *
++   * @var string
++   */
++  protected $name;
+ 
+   /**
+    * Construct a ScopeEntity instance.
+@@ -19,10 +26,30 @@ class ScopeEntity implements ScopeEntityInterface {
+   public function __construct(RoleInterface $role) {
+     $this->role = $role;
+     $this->setIdentifier($role->id());
++    $this->name = $role->label();
++    $this->addCacheableDependency($role);
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
+   public function jsonSerialize() {
+     return $this->getIdentifier();
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  public function getName() {
++    return $this->name;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getDescription() {
++    // Roles have no description.
++    return NULL;
++  }
++
+ }
+diff --git a/src/Entities/ScopeEntityNameInterface.php b/src/Entities/ScopeEntityNameInterface.php
+new file mode 100644
+index 0000000..e68f7db
+--- /dev/null
++++ b/src/Entities/ScopeEntityNameInterface.php
+@@ -0,0 +1,29 @@
++<?php
++
++namespace Drupal\simple_oauth\Entities;
++
++use Drupal\Core\Cache\CacheableDependencyInterface;
++use League\OAuth2\Server\Entities\ScopeEntityInterface;
++
++/**
++ * Extends the scope entity to include a name and description.
++ */
++interface ScopeEntityNameInterface extends ScopeEntityInterface, CacheableDependencyInterface {
++
++  /**
++   * Returns a name for the scope.
++   *
++   * @return string
++   *   The name of the scope.
++   */
++  public function getName();
++
++  /**
++   * Returns a description for the scope.
++   *
++   * @return string|null
++   *   The description of the scope.
++   */
++  public function getDescription();
++
++}
+diff --git a/src/Entity/Form/Oauth2TokenDeleteForm.php b/src/Entity/Form/Oauth2TokenDeleteForm.php
+index 0e3386c..75189b0 100644
+--- a/src/Entity/Form/Oauth2TokenDeleteForm.php
++++ b/src/Entity/Form/Oauth2TokenDeleteForm.php
+@@ -2,9 +2,14 @@
+ 
+ namespace Drupal\simple_oauth\Entity\Form;
+ 
++use Drupal\Component\Datetime\TimeInterface;
+ use Drupal\Core\Entity\ContentEntityConfirmFormBase;
++use Drupal\Core\Entity\EntityManagerInterface;
++use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\Messenger\MessengerInterface;
+ use Drupal\Core\Url;
++use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+  * Provides a form for deleting Access Token entities.
+@@ -13,6 +18,42 @@ use Drupal\Core\Url;
+  */
+ class Oauth2TokenDeleteForm extends ContentEntityConfirmFormBase {
+ 
++  /**
++   * The messenger service.
++   *
++   * @var \Drupal\Core\Messenger\MessengerInterface
++   */
++  protected $messenger;
++
++  /**
++   * Constructs a ContentEntityForm object.
++   *
++   * @param \Drupal\Core\Entity\EntityManagerInterface $entity_manager
++   *   The entity manager.
++   * @param \Drupal\Core\Entity\EntityTypeBundleInfoInterface $entity_type_bundle_info
++   *   The entity type bundle service.
++   * @param \Drupal\Component\Datetime\TimeInterface $time
++   *   The time service.
++   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
++   *   The messenger service.
++   */
++  public function __construct(EntityManagerInterface $entity_manager, EntityTypeBundleInfoInterface $entity_type_bundle_info = NULL, TimeInterface $time = NULL, MessengerInterface $messenger) {
++    parent::__construct($entity_manager, $entity_type_bundle_info, $time);
++    $this->messenger = $messenger;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container) {
++    return new static(
++      $container->get('entity.manager'),
++      $container->get('entity_type.bundle.info'),
++      $container->get('datetime.time'),
++      $container->get('messenger')
++    );
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -40,7 +81,7 @@ class Oauth2TokenDeleteForm extends ContentEntityConfirmFormBase {
+   public function submitForm(array &$form, FormStateInterface $form_state) {
+     $this->entity->delete();
+ 
+-    drupal_set_message(
++    $this->messenger->addMessage(
+       $this->t('content @type: deleted @label.',
+         [
+           '@type' => $this->entity->bundle(),
+diff --git a/src/Entity/Form/Oauth2TokenSettingsForm.php b/src/Entity/Form/Oauth2TokenSettingsForm.php
+index b190c7a..4370c92 100644
+--- a/src/Entity/Form/Oauth2TokenSettingsForm.php
++++ b/src/Entity/Form/Oauth2TokenSettingsForm.php
+@@ -5,6 +5,7 @@ namespace Drupal\simple_oauth\Entity\Form;
+ use Drupal\Core\Config\ConfigFactoryInterface;
+ use Drupal\Core\Form\ConfigFormBase;
+ use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\Messenger\MessengerInterface;
+ use Drupal\Core\Url;
+ use Drupal\simple_oauth\Service\Filesystem\FilesystemInterface;
+ use Symfony\Component\DependencyInjection\ContainerInterface;
+@@ -19,14 +20,28 @@ class Oauth2TokenSettingsForm extends ConfigFormBase {
+    */
+   protected $fileSystem;
+ 
++  /**
++   * The messenger service.
++   *
++   * @var \Drupal\Core\Messenger\MessengerInterface
++   */
++  protected $messenger;
++
++
+   /**
+    * Oauth2TokenSettingsForm constructor.
+    *
+-   * @param \Drupal\simple_oauth\Service\Filesystem\FilesystemInterface $filesystem
++   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
++   *   The factory for configuration objects.
++   * @param \Drupal\simple_oauth\Service\Filesystem\FilesystemInterface $fileSystem
++   *   The simple_oauth.filesystem service.
++   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
++   *   The messenger service.
+    */
+-  public function __construct(ConfigFactoryInterface $configFactory, FilesystemInterface $file_system) {
++  public function __construct(ConfigFactoryInterface $configFactory, FilesystemInterface $fileSystem, MessengerInterface $messenger) {
+     parent::__construct($configFactory);
+-    $this->fileSystem = $file_system;
++    $this->fileSystem = $fileSystem;
++    $this->messenger = $messenger;
+   }
+ 
+   /**
+@@ -35,7 +50,8 @@ class Oauth2TokenSettingsForm extends ConfigFormBase {
+   public static function create(ContainerInterface $container) {
+     return new static(
+       $container->get('config.factory'),
+-      $container->get('simple_oauth.filesystem')
++      $container->get('simple_oauth.filesystem'),
++      $container->get('messenger')
+     );
+   }
+ 
+@@ -70,6 +86,7 @@ class Oauth2TokenSettingsForm extends ConfigFormBase {
+     $settings->set('refresh_token_expiration', $form_state->getValue('refresh_token_expiration'));
+     $settings->set('public_key', $form_state->getValue('public_key'));
+     $settings->set('private_key', $form_state->getValue('private_key'));
++    $settings->set('remember_clients', $form_state->getValue('remember_clients'));
+     $settings->save();
+     parent::submitForm($form, $form_state);
+   }
+@@ -86,26 +103,24 @@ class Oauth2TokenSettingsForm extends ConfigFormBase {
+    *   Form definition array.
+    */
+   public function buildForm(array $form, FormStateInterface $form_state) {
++    $config = $this->config('simple_oauth.settings');
+     $form['access_token_expiration'] = [
+       '#type' => 'number',
+       '#title' => $this->t('Access token expiration time'),
+       '#description' => $this->t('The default value, in seconds, to be used as expiration time when creating new tokens.'),
+-      '#default_value' => $this->config('simple_oauth.settings')
+-        ->get('access_token_expiration'),
++      '#default_value' => $config->get('access_token_expiration'),
+     ];
+     $form['refresh_token_expiration'] = [
+       '#type' => 'number',
+       '#title' => $this->t('Refresh token expiration time'),
+       '#description' => $this->t('The default value, in seconds, to be used as expiration time when creating new tokens.'),
+-      '#default_value' => $this->config('simple_oauth.settings')
+-        ->get('refresh_token_expiration'),
++      '#default_value' => $config->get('refresh_token_expiration'),
+     ];
+     $form['public_key'] = [
+       '#type' => 'textfield',
+       '#title' => $this->t('Public Key'),
+       '#description' => $this->t('The path to the public key file.'),
+-      '#default_value' => $this->config('simple_oauth.settings')
+-        ->get('public_key'),
++      '#default_value' => $config->get('public_key'),
+       '#element_validate' => ['::validateExistingFile'],
+       '#required' => TRUE,
+       '#attributes' => ['id' => 'pubk'],
+@@ -114,13 +129,19 @@ class Oauth2TokenSettingsForm extends ConfigFormBase {
+       '#type' => 'textfield',
+       '#title' => $this->t('Private Key'),
+       '#description' => $this->t('The path to the private key file.'),
+-      '#default_value' => $this->config('simple_oauth.settings')
+-        ->get('private_key'),
++      '#default_value' => $config->get('private_key'),
+       '#element_validate' => ['::validateExistingFile'],
+       '#required' => TRUE,
+       '#attributes' => ['id' => 'pk'],
+     ];
+ 
++    $form['remember_clients'] = [
++      '#type' => 'checkbox',
++      '#title' => $this->t('Remember previously approved clients'),
++      '#description' => $this->t('When enabled, autorized clients will be stored and a authorization requests for the same client with previously accepted scopes will automatically be accepted.'),
++      '#default_value' => $config->get('remember_clients'),
++    ];
++
+     $form['actions'] = [
+       'actions' => [
+         '#cache' => ['max-age' => 0],
+@@ -149,7 +170,7 @@ class Oauth2TokenSettingsForm extends ConfigFormBase {
+     }
+     else {
+       // Generate Notice Info Message about enabling openssl extension.
+-      drupal_set_message(
++      $this->messenger->addMessage(
+         $this->t('Enabling the PHP OpenSSL Extension will permit you generate the keys from this form.'),
+         'warning'
+       );
+diff --git a/src/Entity/Oauth2TokenType.php b/src/Entity/Oauth2TokenType.php
+index 54ff06c..0de4120 100644
+--- a/src/Entity/Oauth2TokenType.php
++++ b/src/Entity/Oauth2TokenType.php
+@@ -19,9 +19,6 @@ use Drupal\Core\Config\Entity\ConfigEntityBase;
+  *     "id" = "id",
+  *     "label" = "label",
+  *     "uuid" = "uuid"
+- *   },
+- *   links = {
+- *     "canonical" = "/admin/config/people/accounts/oauth2_token_type/{oauth2_token_type}",
+  *   }
+  * )
+  */
+diff --git a/src/KnownClientsRepository.php b/src/KnownClientsRepository.php
+new file mode 100644
+index 0000000..c64409f
+--- /dev/null
++++ b/src/KnownClientsRepository.php
+@@ -0,0 +1,55 @@
++<?php
++
++namespace Drupal\simple_oauth;
++
++use Drupal\user\UserDataInterface;
++
++/**
++ * Default implementation for the known clients repository.
++ */
++class KnownClientsRepository implements KnownClientsRepositoryInterface {
++
++  /**
++   * The user data service.
++   *
++   * @var \Drupal\user\UserDataInterface
++   */
++  protected $userData;
++
++  /**
++   * KnownClientsRepository constructor.
++   *
++   * @param \Drupal\user\UserDataInterface $user_data
++   *   The user data service.
++   */
++  public function __construct(UserDataInterface $user_data) {
++    $this->userData = $user_data;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function isAuthorized($uid, $client_id, array $scopes) {
++    $name = 'client:' . $client_id;
++    $authorized_scopes = $this->userData->get('simple_oauth', $uid, $name);
++
++    // Access is allowed if all the requested scopes are part of the alrady
++    // authorized scopes.
++    if (is_array($authorized_scopes) && !array_diff($scopes, $authorized_scopes)) {
++      return TRUE;
++    }
++    return FALSE;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function rememberClient($uid, $client_id, array $scopes) {
++    $name = 'client:' . $client_id;
++    $existing_scopes = (array) $this->userData->get('simple_oauth', $uid, $name);
++
++    $scopes = array_unique(array_merge($scopes, $existing_scopes));
++    $this->userData->set('simple_oauth', $uid, $name, $scopes);
++  }
++
++}
+diff --git a/src/KnownClientsRepositoryInterface.php b/src/KnownClientsRepositoryInterface.php
+new file mode 100644
+index 0000000..df495f8
+--- /dev/null
++++ b/src/KnownClientsRepositoryInterface.php
+@@ -0,0 +1,41 @@
++<?php
++
++namespace Drupal\simple_oauth;
++
++/**
++ * An interface that remembers known clients.
++ */
++interface KnownClientsRepositoryInterface {
++
++  /**
++   * Checks if a given user authorized a client for a given set of scopes.
++   *
++   * @param int $uid
++   *   The user ID.
++   * @param string $client_id
++   *   The client ID.
++   * @param string[] $scopes
++   *   List of scopes to authorize for.
++   *
++   * @return bool
++   *   TRUE if the client is authorized, FALSE otherwise.
++   *
++   */
++  public function isAuthorized($uid, $client_id, array $scopes);
++
++  /**
++   * Store a client with a set of scopes as authorized for a given user.
++   *
++   * Passed in scopes are merged with already accepted scopes for the given
++   * client.
++   *
++   * @param int $uid
++   *   The user ID.
++   * @param string $client_id
++   *   The client ID.
++   * @param string[] $scopes
++   *   List of scopes that shuld be authorized.
++   */
++  public function rememberClient($uid, $client_id, array $scopes);
++
++}
+diff --git a/src/Plugin/Oauth2GrantManager.php b/src/Plugin/Oauth2GrantManager.php
+index 069a044..fb1d98e 100644
+--- a/src/Plugin/Oauth2GrantManager.php
++++ b/src/Plugin/Oauth2GrantManager.php
+@@ -16,6 +16,7 @@ use League\OAuth2\Server\Repositories\AccessTokenRepositoryInterface;
+ use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
+ use League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface;
+ use League\OAuth2\Server\Repositories\ScopeRepositoryInterface;
++use League\OAuth2\Server\ResponseTypes\ResponseTypeInterface;
+ 
+ /**
+  * Provides the OAuth2 Grant plugin manager.
+@@ -42,6 +43,11 @@ class Oauth2GrantManager extends DefaultPluginManager implements Oauth2GrantMana
+    */
+   protected $refreshTokenRepository;
+ 
++  /**
++   * @var \League\OAuth2\Server\ResponseTypes\ResponseTypeInterface
++   */
++  protected $responseType;
++
+   /**
+    * @var string
+    */
+@@ -67,6 +73,20 @@ class Oauth2GrantManager extends DefaultPluginManager implements Oauth2GrantMana
+    *   Cache backend instance to use.
+    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+    *   The module handler to invoke the alter hook with.
++   * @param \League\OAuth2\Server\Repositories\ClientRepositoryInterface $client_repository
++   *   The client repository.
++   * @param \League\OAuth2\Server\Repositories\ScopeRepositoryInterface $scope_repository
++   *   The scope repository.
++   * @param \League\OAuth2\Server\Repositories\AccessTokenRepositoryInterface $access_token_repository
++   *   The access token repository.
++   * @param \League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface $refresh_token_repository
++   *   The refresh token repository.
++   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
++   *   The config factory.
++   * @param \League\OAuth2\Server\ResponseTypes\ResponseTypeInterface $response_type
++   *   The authorization server response type.
++   *
++   * @throws \Exception
+    */
+   public function __construct(
+     \Traversable $namespaces,
+@@ -76,7 +96,8 @@ class Oauth2GrantManager extends DefaultPluginManager implements Oauth2GrantMana
+     ScopeRepositoryInterface $scope_repository,
+     AccessTokenRepositoryInterface $access_token_repository,
+     RefreshTokenRepositoryInterface $refresh_token_repository,
+-    ConfigFactoryInterface $config_factory
++    ConfigFactoryInterface $config_factory,
++    ResponseTypeInterface $response_type = NULL
+   ) {
+     parent::__construct('Plugin/Oauth2Grant', $namespaces, $module_handler, 'Drupal\simple_oauth\Plugin\Oauth2GrantInterface', 'Drupal\simple_oauth\Annotation\Oauth2Grant');
+ 
+@@ -87,6 +108,7 @@ class Oauth2GrantManager extends DefaultPluginManager implements Oauth2GrantMana
+     $this->scopeRepository = $scope_repository;
+     $this->accessTokenRepository = $access_token_repository;
+     $this->refreshTokenRepository = $refresh_token_repository;
++    $this->responseType = $response_type;
+     $settings = $config_factory->get('simple_oauth.settings');
+     $this->setKeyPaths($settings);
+     $this->expiration = new \DateInterval(sprintf('PT%dS', $settings->get('access_token_expiration')));
+@@ -106,12 +128,19 @@ class Oauth2GrantManager extends DefaultPluginManager implements Oauth2GrantMana
+ 
+     $this->checkKeyPaths();
+     $salt = Settings::getHashSalt();
++
++    // The hash salt must be at least 32 characters long.
++    if (Core::ourStrlen($salt) < 32) {
++      throw OAuthServerException::serverError('Hash salt must be at least 32 characters long.');
++    }
++
+     $server = new AuthorizationServer(
+       $this->clientRepository,
+       $this->accessTokenRepository,
+       $this->scopeRepository,
+       realpath($this->privateKeyPath),
+-      Core::ourSubstr($salt, 0, 32)
++      Core::ourSubstr($salt, 0, 32),
++      $this->responseType
+     );
+     // Enable the password grant on the server with a token TTL of X hours.
+     $server->enableGrantType(
+diff --git a/tests/src/Functional/PasswordFunctionalTest.php b/tests/src/Functional/PasswordFunctionalTest.php
+index f594480..9459125 100644
+--- a/tests/src/Functional/PasswordFunctionalTest.php
++++ b/tests/src/Functional/PasswordFunctionalTest.php
+@@ -30,7 +30,16 @@ class PasswordFunctionalTest extends TokenBearerFunctionalTestBase {
+     $response = $this->request('POST', $this->url, [
+       'form_params' => $valid_payload,
+     ]);
+-    $this->assertValidTokenResponse($response, TRUE);
++    $response = $this->assertValidTokenResponse($response, TRUE);
++    // Repeat the request but pass an obtained access token as a header in
++    // order to check the authentication in parallel, which will precede
++    // the creation of a new token.
++    $this->assertValidTokenResponse($this->request('POST', $this->url, [
++      'form_params' => $valid_payload,
++      'headers' => [
++        'Authorization' => 'Bearer ' . $response['access_token'],
++      ],
++    ]), TRUE);
+ 
+     // 2. Test the valid request without scopes.
+     $payload_no_scope = $valid_payload;
+@@ -95,7 +104,7 @@ class PasswordFunctionalTest extends TokenBearerFunctionalTestBase {
+       $response = $this->request('POST', $this->url, [
+         'form_params' => $invalid_payload,
+       ]);
+-      $parsed_response = Json::decode($response->getBody()->getContents());
++      $parsed_response = Json::decode((string) $response->getBody());
+       $this->assertSame($value['error'], $parsed_response['error'], sprintf('Correct error code %s for %s.', $value['error'], $key));
+       $this->assertSame($value['code'], $response->getStatusCode(), sprintf('Correct status code %d for %s.', $value['code'], $key));
+     }
+@@ -142,7 +151,7 @@ class PasswordFunctionalTest extends TokenBearerFunctionalTestBase {
+       $response = $this->request('POST', $this->url, [
+         'form_params' => $invalid_payload,
+       ]);
+-      $parsed_response = Json::decode($response->getBody()->getContents());
++      $parsed_response = Json::decode((string) $response->getBody());
+       $this->assertSame($value['error'], $parsed_response['error'], sprintf('Correct error code %s for %s.', $value['error'], $key));
+       $this->assertSame($value['code'], $response->getStatusCode(), sprintf('Correct status code %d for %s.', $value['code'], $key));
+     }
+diff --git a/tests/src/Functional/SimpleOauthTestTrait.php b/tests/src/Functional/SimpleOauthTestTrait.php
+new file mode 100644
+index 0000000..47adcd5
+--- /dev/null
++++ b/tests/src/Functional/SimpleOauthTestTrait.php
+@@ -0,0 +1,36 @@
++<?php
++
++namespace Drupal\Tests\simple_oauth\Functional;
++
++/**
++ * Trait with methods needed by tests.
++ */
++trait SimpleOauthTestTrait {
++
++  /**
++   * Set up public and private keys.
++   */
++  public function setUpKeys() {
++    $path = $this->container->get('module_handler')->getModule('simple_oauth')->getPath();
++
++    $public_key_path = 'private:///public.key';
++    $private_key_path = 'private:///private.key';
++
++    $source_public_key_path = '/' . $path . '/tests/certificates/public.key';
++    $source_private_key_path = '/' . $path . '/tests/certificates/private.key';
++    file_put_contents($public_key_path, file_get_contents(DRUPAL_ROOT . $source_public_key_path));
++    file_put_contents($private_key_path, file_get_contents(DRUPAL_ROOT . $source_private_key_path));
++    chmod($public_key_path, 0660);
++    chmod($private_key_path, 0660);
++
++    /** @var \Drupal\Core\File\FileSystemInterface $filesystem */
++    $filesystem = \Drupal::service('file_system');
++
++    $settings = $this->config('simple_oauth.settings');
++    $settings->set('public_key', $filesystem->realpath($public_key_path));
++    $settings->set('private_key', $filesystem->realpath($private_key_path));
++    $settings->save();
++
++  }
++
++}
+diff --git a/tests/src/Functional/TokenBearerFunctionalTestBase.php b/tests/src/Functional/TokenBearerFunctionalTestBase.php
+index a4e9cfc..fff45f3 100644
+--- a/tests/src/Functional/TokenBearerFunctionalTestBase.php
++++ b/tests/src/Functional/TokenBearerFunctionalTestBase.php
+@@ -20,6 +20,7 @@ use Psr\Http\Message\ResponseInterface;
+ abstract class TokenBearerFunctionalTestBase extends BrowserTestBase {
+ 
+   use RequestHelperTrait;
++  use SimpleOauthTestTrait;
+ 
+   public static $modules = [
+     'image',
+@@ -59,16 +60,6 @@ abstract class TokenBearerFunctionalTestBase extends BrowserTestBase {
+    */
+   protected $additionalRoles;
+ 
+-  /**
+-   * @var string
+-   */
+-  protected $privateKeyPath;
+-
+-  /**
+-   * @var string
+-   */
+-  protected $publicKeyPath;
+-
+   /**
+    * @var string
+    */
+@@ -80,8 +71,6 @@ abstract class TokenBearerFunctionalTestBase extends BrowserTestBase {
+   protected function setUp() {
+     parent::setUp();
+ 
+-    $this->htmlOutputEnabled = FALSE;
+-
+     $this->url = Url::fromRoute('oauth2_token.token');
+ 
+     // Set up a HTTP client that accepts relative URLs.
+@@ -113,6 +102,7 @@ abstract class TokenBearerFunctionalTestBase extends BrowserTestBase {
+       'label' => $this->getRandomGenerator()->name(),
+       'secret' => $this->clientSecret,
+       'confidential' => TRUE,
++      'third_party' => TRUE,
+       'roles' => [['target_id' => $client_role->id()]],
+     ]);
+     $this->client->save();
+@@ -125,21 +115,7 @@ abstract class TokenBearerFunctionalTestBase extends BrowserTestBase {
+       'access content',
+     ]);
+ 
+-    // Use the public and private keys.
+-    $path = $this->container->get('module_handler')->getModule('simple_oauth')->getPath();
+-    $temp_dir = sys_get_temp_dir();
+-    $public_path = '/' . $path . '/tests/certificates/public.key';
+-    $private_path = '/' . $path . '/tests/certificates/private.key';
+-    file_put_contents($temp_dir . '/public.key', file_get_contents(DRUPAL_ROOT . $public_path));
+-    file_put_contents($temp_dir . '/private.key', file_get_contents(DRUPAL_ROOT . $private_path));
+-    chmod($temp_dir . '/public.key', 0660);
+-    chmod($temp_dir . '/private.key', 0660);
+-    $this->publicKeyPath = $temp_dir . '/public.key';
+-    $this->privateKeyPath = $temp_dir . '/private.key';
+-    $settings = $this->config('simple_oauth.settings');
+-    $settings->set('public_key', $this->publicKeyPath);
+-    $settings->set('private_key', $this->privateKeyPath);
+-    $settings->save();
++    $this->setUpKeys();
+ 
+     $num_roles = mt_rand(1, count($this->additionalRoles));
+     $requested_roles = array_slice($this->additionalRoles, 0, $num_roles);
+@@ -158,10 +134,13 @@ abstract class TokenBearerFunctionalTestBase extends BrowserTestBase {
+    *   The response object.
+    * @param bool $has_refresh
+    *   TRUE if the response should return a refresh token. FALSE otherwise.
++   *
++   * @return array
++   *   An array representing the response of "/oauth/token".
+    */
+   protected function assertValidTokenResponse(ResponseInterface $response, $has_refresh = FALSE) {
+     $this->assertEquals(200, $response->getStatusCode());
+-    $parsed_response = Json::decode($response->getBody()->getContents());
++    $parsed_response = Json::decode((string) $response->getBody());
+     $this->assertSame('Bearer', $parsed_response['token_type']);
+     $expiration = $this->config('simple_oauth.settings')->get('access_token_expiration');
+     $this->assertLessThanOrEqual($expiration, $parsed_response['expires_in']);
+@@ -171,8 +150,10 @@ abstract class TokenBearerFunctionalTestBase extends BrowserTestBase {
+       $this->assertNotEmpty($parsed_response['refresh_token']);
+     }
+     else {
+-      $this->assertTrue(empty($parsed_response['refresh_token']));
++      $this->assertFalse(isset($parsed_response['refresh_token']));
+     }
++
++    return $parsed_response;
+   }
+ 
+ }

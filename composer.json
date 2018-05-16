@@ -40,6 +40,9 @@
             },
             "drupal/page_manager": {
                 "2876880 - page_variant entity type does not exist when installing or enabling":"https://www.drupal.org/files/issues/2876880-page-varient-cache-2.patch"
+            },
+            "drupal/simple_oauth": {
+                "simple_oauth 8.x-3.5..8.x-3.8 changes": "patches/simple_oauth-35_38_changes.patch"
             }
         }
     }
