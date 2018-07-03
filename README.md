@@ -25,6 +25,8 @@ https://github.com/acquia/lightning-commerce/releases
 include required Composer dependencies and should not be used without following
 the special instructions found there.)
 
+From version 1.6.0, we require at least PHP7.1.
+
 ## What Acquia Lightning for Commerce Does
 Acquia Lightning for Commerce provides all feature of Drupal Lightning. Extra features
 are focused on seamless integration with Acquia Commerce Manager and 

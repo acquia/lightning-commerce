@@ -11,6 +11,7 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
+	"php": "^7.1",
         "acquia/lightning": "~3",
         "drupal/lightning_core": "~2.3",
         "drupal/drupal-extension": "~3.4",
