@@ -12,7 +12,7 @@
     "prefer-stable": true,
     "require": {
 	"php": "^7.1",
-        "acquia/lightning": "~3",
+        "acquia/lightning": "~3.1.5",
         "drupal/lightning_core": "~2.3",
         "drupal/drupal-extension": "~3.4",
         "drupal/config_rewrite": "~1.1",
@@ -41,9 +41,6 @@
             },
             "drupal/page_manager": {
                 "2876880 - page_variant entity type does not exist when installing or enabling":"https://www.drupal.org/files/issues/2876880-page-varient-cache-2.patch"
-            },
-            "drupal/simple_oauth": {
-                "simple_oauth 8.x-3.5..8.x-3.8 changes": "patches/simple_oauth-35_38_changes.patch"
             }
         }
     }
