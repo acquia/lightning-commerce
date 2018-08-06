@@ -56,6 +56,7 @@ install:
 - composer require acquia/lightning:${LIGHTNING}
 - mkdir -p profiles/contrib
 - mv ../lightning_commerce profiles/contrib
+- ls profiles/contrib
 - composer require drush/drush acquia/commerce-manager:${ACM}
 - composer run-script drupal-phpunit-upgrade
 - composer install
