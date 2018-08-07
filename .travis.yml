@@ -41,8 +41,8 @@ install:
 - export SIMPLETEST_DB="mysql://testing:testing@localhost/testing"
 - export SIMPLETEST_BASE_URL=http://localhost:8080
 # first clone everything also into a subfolder, via a parent build folder
-- mkdir lightning_commerce
-- mv `ls -A | grep -v "^lightning_commerce"` ./lightning_commerce
+- mkdir lightning-commerce
+- mv `ls -A | grep -v "^lightning-commerce"` ./lightning-commerce
 - composer clearcache
 - composer self-update
 - composer create-project drupal/drupal:${DRUPAL} drupal --no-interaction --no-install
@@ -57,7 +57,7 @@ install:
 - mkdir -p profiles/contrib
 - mv ../lightning_commerce profiles/contrib
 - ls profiles/contrib
-- composer require drush/drush acquia/commerce-manager:${ACM}
+- composer require drush/drush drupal/admin_toolbar acquia/commerce-manager:${ACM}
 - composer run-script drupal-phpunit-upgrade
 - composer install
 # Install drupal.
