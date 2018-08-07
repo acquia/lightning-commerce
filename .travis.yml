@@ -7,22 +7,10 @@ php:
 env:
 - DRUPAL=^8.5 LIGHTNING=^3.1 ACM="dev-8.x-1.x"
 - DRUPAL=^8.5 LIGHTNING=^3.1 ACM="^1"
-- DRUPAL=^8.5 LIGHTNING=^3.2 ACM="dev-8.x-1.x"
-- DRUPAL=^8.5 LIGHTNING=^3.2 ACM="^1"
-- DRUPAL=^8.5 LIGHTNING=^4.0 ACM="dev-8.x-1.x"
-- DRUPAL=^8.5 LIGHTNING=^4.0 ACM="^1"
 - DRUPAL=8.5.x-dev LIGHTNING=^3.1 ACM="dev-8.x-1.x"
 - DRUPAL=8.5.x-dev LIGHTNING=^3.1 ACM="^1"
-- DRUPAL=8.5.x-dev LIGHTNING=^3.2 ACM="dev-8.x-1.x"
-- DRUPAL=8.5.x-dev LIGHTNING=^3.2 ACM="^1"
-- DRUPAL=8.5.x-dev LIGHTNING=^4.0 ACM="dev-8.x-1.x"
-- DRUPAL=8.5.x-dev LIGHTNING=^4.0 ACM="^1"
 - DRUPAL=8.6.x-dev LIGHTNING=^3.1 ACM="dev-8.x-1.x"
 - DRUPAL=8.6.x-dev LIGHTNING=^3.1 ACM="^1"
-- DRUPAL=8.6.x-dev LIGHTNING=^3.2 ACM="dev-8.x-1.x"
-- DRUPAL=8.6.x-dev LIGHTNING=^3.2 ACM="^1"
-- DRUPAL=8.6.x-dev LIGHTNING=^4.0 ACM="dev-8.x-1.x"
-- DRUPAL=8.6.x-dev LIGHTNING=^4.0 ACM="^1"
 
 before_install:
 # items for phpcs
