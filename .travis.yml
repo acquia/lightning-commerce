@@ -55,7 +55,7 @@ install:
 - composer require j7mbo/twitter-api-php league/oauth2-server:~6.0 webflo/drupal-core-strict:~8.5.0 'phpdocumentor/reflection-docblock:^3.0||^4.0'
 - composer require acquia/lightning:${LIGHTNING}
 - mkdir -p profiles/contrib
-- mv ../lightning_commerce profiles/contrib
+- mv ../lightning-commerce profiles/contrib
 - ls profiles/contrib
 - composer require drush/drush drupal/admin_toolbar acquia/commerce-manager:${ACM}
 - composer run-script drupal-phpunit-upgrade
