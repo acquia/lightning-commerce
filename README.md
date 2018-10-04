@@ -1,8 +1,13 @@
 # <img src="lightning_commerce.png" width="32"> Acquia Lightning for Commerce
-[![Build Status](https://travis-ci.org/acquia/lightning-commerce.svg?branch=master)](https://travis-ci.org/acquia/lightning-commerce)
+[![Build Status](
+https://travis-ci.org/acquia/lightning-commerce.svg?branch=master
+)](
+https://travis-ci.org/acquia/lightning-commerce
+)
 
-Acquia Lightning for Commerce distribution is built on the top of popular Drupal Lightning. 
-We're focusing on providing effortless way for testing Acquia Commerce Manager. 
+Acquia Lightning for Commerce distribution is built on the top of popular
+Drupal Lightning. We're focusing on providing effortless way for testing
+Acquia Commerce Manager. 
 
 ## Installing Acquia Lightning for Commerce
 The preferred way to install Acquia Lightning for Commerce is using our
@@ -25,9 +30,11 @@ https://github.com/acquia/lightning-commerce/releases
 include required Composer dependencies and should not be used without following
 the special instructions found there.)
 
+From version 1.6.0, we require at least PHP7.1.
+
 ## What Acquia Lightning for Commerce Does
-Acquia Lightning for Commerce provides all feature of Drupal Lightning. Extra features
-are focused on seamless integration with Acquia Commerce Manager and 
+Acquia Lightning for Commerce provides all feature of Drupal Lightning. Extra 
+features are focused on seamless integration with Acquia Commerce Manager and 
 easy set up of sales demos:
  - ACM demo module - easy setup of ACM modules and demo content on the top of
 that.

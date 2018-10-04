@@ -1,0 +1,68 @@
+language: php
+
+php:
+- 7.1
+- 7.2
+
+env:
+- DRUPAL=^8.5 LIGHTNING=^3.1 ACM="dev-8.x-1.x"
+- DRUPAL=^8.5 LIGHTNING=^3.1 ACM="^1"
+- DRUPAL=8.5.x-dev LIGHTNING=^3.1 ACM="dev-8.x-1.x"
+- DRUPAL=8.5.x-dev LIGHTNING=^3.1 ACM="^1"
+- DRUPAL=8.6.x-dev LIGHTNING=^3.1 ACM="dev-8.x-1.x"
+- DRUPAL=8.6.x-dev LIGHTNING=^3.1 ACM="^1"
+
+before_install:
+# items for phpcs
+- composer global require drupal/coder ^8.2@stable
+- export PATH="$PATH:$HOME/.composer/vendor/bin"
+- phpcs --config-set installed_paths $HOME/.composer/vendor/drupal/coder/coder_sniffer
+# add composer's global bin directory to the path
+# see: https://github.com/drush-ops/drush#install---composer
+- export PATH="`composer global config bin-dir --absolute`:$PATH"
+# debug
+- composer global config bin-dir --absolute
+- phpcs --standard=Drupal .
+install:
+# Create the MySQL database and add a user for testing.
+- mysql -u root -e "CREATE DATABASE testing; CREATE USER 'testing'@'localhost' IDENTIFIED BY 'testing'; GRANT ALL ON testing.* TO 'testing'@'localhost';"
+- export SIMPLETEST_DB="mysql://testing:testing@localhost/testing"
+- export SIMPLETEST_BASE_URL=http://localhost:8080
+# first clone everything also into a subfolder, via a parent build folder
+- mkdir lightning-commerce
+- mv `ls -A | grep -v "^lightning-commerce"` ./lightning-commerce
+- composer clearcache
+- composer self-update
+- composer create-project drupal/drupal:${DRUPAL} drupal --no-interaction --no-install
+# Add packages required by acm.
+- cd drupal
+# see https://github.com/drupal-composer/drupal-project/issues/175
+- composer config --unset repositories.0
+- composer config repositories.drupal composer https://packages.drupal.org/8
+- composer config repositories.assets composer https://asset-packagist.org
+- composer require j7mbo/twitter-api-php league/oauth2-server:~6.0 webflo/drupal-core-strict:~8.5.0 'phpdocumentor/reflection-docblock:^3.0||^4.0'
+- composer require acquia/lightning:${LIGHTNING}
+- mkdir -p profiles/contrib
+- mv ../lightning-commerce profiles/contrib
+- ls profiles/contrib
+- composer require drush/drush drupal/admin_toolbar acquia/commerce-manager:${ACM}
+- composer run-script drupal-phpunit-upgrade
+- composer install
+# Install drupal.
+- ./vendor/bin/drush --verbose site-install lightning_commerce --db-url=mysql://root:@127.0.0.1/drupal --yes
+# Enable the acm suite of modules.
+- ./vendor/bin/drush en -y acm acm_cart acm_checkout acm_customer acm_diagnostic acm_exception acm_payment acm_product acm_promotion acm_sku acm_sku_position
+# Enable simpletest for module tests
+- ./vendor/bin/drush en -y simpletest
+before_script:
+- phpenv config-rm xdebug.ini
+- mkdir -p $TRAVIS_BUILD_DIR/drupal/sites/simpletest && chmod 777 $TRAVIS_BUILD_DIR/drupal/sites/simpletest -fR
+- cd $TRAVIS_BUILD_DIR/drupal
+- ./vendor/bin/drush runserver localhost:8080 &
+- echo $! > drush_runserver.pid
+- until netstat -an 2>/dev/null | grep '8080.*LISTEN'; do true; done
+script:
+- mkdir -p $TRAVIS_BUILD_DIR/drupal/modules/contrib/commerce-manager/tests/logs
+# Run behat tests.
+- ./vendor/bin/phpunit -c modules/contrib/commerce-manager/phpunit.xml modules/contrib/commerce-manager --debug -v --stop-on-failure
+- kill -s TERM `cat drush_runserver.pid`
