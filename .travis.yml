@@ -47,7 +47,7 @@ install:
 # Install drupal.
 - ./vendor/bin/drush --verbose site-install lightning_commerce --db-url=mysql://root:@127.0.0.1/drupal --yes
 # Enable the acm suite of modules.
-- ./vendor/bin/drush en -y acm acm_cart acm_checkout acm_customer acm_diagnostic acm_exception acm_payment acm_product acm_promotion acm_sku acm_sku_position
+- ./vendor/bin/drush en -y acm acm_cart acm_checkout acm_customer acm_exception acm_payment acm_product acm_promotion acm_sku acm_sku_position
 # Enable simpletest for module tests
 - ./vendor/bin/drush en -y simpletest
 before_script:
