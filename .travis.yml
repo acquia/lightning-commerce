@@ -15,13 +15,9 @@ env:
 before_install:
 # items for phpcs
 - composer global require drupal/coder ^8.2@stable
-- export PATH="$PATH:$HOME/.composer/vendor/bin"
-- phpcs --config-set installed_paths $HOME/.composer/vendor/drupal/coder/coder_sniffer
-# add composer's global bin directory to the path
-# see: https://github.com/drush-ops/drush#install---composer
-- export PATH="`composer global config bin-dir --absolute`:$PATH"
-# debug
-- composer global config bin-dir --absolute
+- export COMPOSER_HOME=`composer config home`
+- export PATH="$PATH:$COMPOSER_HOME/vendor/bin" 
+- phpcs --config-set installed_paths $COMPOSER_HOME/vendor/drupal/coder/coder_sniffer
 - phpcs --standard=Drupal .
 install:
 # Create the MySQL database and add a user for testing.
