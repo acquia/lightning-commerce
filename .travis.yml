@@ -5,10 +5,10 @@ php:
 - 7.2
 
 env:
-- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=^8.7 LIGHTNING=^3.3 ACM="dev-8.x-1.x"
+- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=^8.7 LIGHTNING=^3.3 ACM="1.x-dev"
 - SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=^8.7 LIGHTNING=^3.3 ACM="^1"
-- SYMFONY_DEPRECATIONS_HELPER=disabled  DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="dev-8.x-1.x"
-- DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="^1" SYMFONY_DEPRECATIONS_HELPER=disabled 
+- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="1.x-dev"
+- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="^1"
 
 before_install:
 # items for phpcs
@@ -56,7 +56,7 @@ before_script:
 - echo $! > drush_runserver.pid
 - until netstat -an 2>/dev/null | grep '8080.*LISTEN'; do true; done
 script:
-- mkdir -p $TRAVIS_BUILD_DIR/drupal/modules/contrib/commerce-manager/tests/logs
+- mkdir -p $TRAVIS_BUILD_DIR/drupal/modules/contrib/acquia_commercemanager/tests/logs
 # Run behat tests.
-- ./vendor/bin/phpunit -c modules/contrib/commerce-manager/phpunit.xml modules/contrib/commerce-manager --debug -v --stop-on-failure
+- ./vendor/bin/phpunit -c modules/contrib/acquia_commercemanager/phpunit.xml modules/contrib/acquia_commercemanager --debug -v --stop-on-failure
 - kill -s TERM `cat drush_runserver.pid`
