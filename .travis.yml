@@ -34,7 +34,7 @@ install:
 - composer config --unset repositories.0
 - composer config repositories.drupal composer https://packages.drupal.org/8
 - composer config repositories.assets composer https://asset-packagist.org
-- composer require j7mbo/twitter-api-php league/oauth2-server:~6.0 webflo/drupal-core-strict:~8.5.0 'phpdocumentor/reflection-docblock:^3.0||^4.0'
+- composer require j7mbo/twitter-api-php league/oauth2-server:~6.0 webflo/drupal-core-strict:~8.7.0 'phpdocumentor/reflection-docblock:^3.0||^4.0'
 - composer require acquia/lightning:${LIGHTNING}
 - mkdir -p profiles/contrib
 - mv ../lightning-commerce profiles/contrib
