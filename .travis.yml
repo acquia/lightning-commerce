@@ -5,10 +5,10 @@ php:
 - 7.2
 
 env:
-- DRUPAL=^8.7 LIGHTNING=^3.3 ACM="dev-8.x-1.x"
-- DRUPAL=^8.7 LIGHTNING=^3.3 ACM="^1"
-- DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="dev-8.x-1.x"
-- DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="^1"
+- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=^8.7 LIGHTNING=^3.3 ACM="dev-8.x-1.x"
+- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=^8.7 LIGHTNING=^3.3 ACM="^1"
+- SYMFONY_DEPRECATIONS_HELPER=disabled  DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="dev-8.x-1.x"
+- DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="^1" SYMFONY_DEPRECATIONS_HELPER=disabled 
 
 before_install:
 # items for phpcs
