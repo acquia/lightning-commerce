@@ -39,7 +39,7 @@ install:
 - mkdir -p profiles/contrib
 - mv ../lightning-commerce profiles/contrib
 - ls profiles/contrib
-- composer require drush/drush drupal/admin_toolbar acquia/commerce-manager:${ACM}
+- composer require drush/drush drupal/admin_toolbar drupal/acquia_commercemanager:${ACM}
 - composer run-script drupal-phpunit-upgrade
 - composer install
 # Install drupal.

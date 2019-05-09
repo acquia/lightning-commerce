@@ -16,7 +16,7 @@
         "drupal/drupal-extension": "~3.4",
         "drupal/config_rewrite": "~1.1",
         "drupal/core": "^8",
-        "acquia/commerce-manager": "~1.12",
+        "drupal/acquia_commercemanager": "~1.12",
         "drupal/admin_toolbar": "~1.21",
         "drupal/migrate_default_content": "~2.0.0@ALPHA",
         "drupal/page_manager": "~4.0.0@BETA",
