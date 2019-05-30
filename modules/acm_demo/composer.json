@@ -1,0 +1,13 @@
+{
+    "name": "drupal/acm_demo",
+    "type": "drupal-module",
+    "description": "Demo module for Acquia Commerce Manager.",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "drupal/admin_toolbar": "~1.21",
+        "drupal/config_rewrite": "~1.1",
+        "drupal/migrate_default_content": "~2.0.0@ALPHA",
+        "drupal/page_manager": "~4.0.0@BETA",
+        "drupal/taxonomy_menu": "3.x-dev"
+    }
+}

@@ -1,11 +1,12 @@
-name: 'Acquia Commerce Manager demo'
+name: 'Acquia Commerce Manager Demo'
+description: "Demo module for Acquia Commerce Manager."
 type: module
 core: '8.x'
 dependencies:
-  - acm_product
-  - acm_promotion
-  - acm_sku
-  - config_rewrite
-  - migrate_default_content
-  - page_manager
-  - taxonomy_menu
+  - acquia_commercemanager:acm_product
+  - acquia_commercemanager:acm_promotion
+  - acquia_commercemanager:acm_sku
+  - config_rewrite:config_rewrite
+  - migrate_default_content:migrate_default_content
+  - page_manager:page_manager
+  - taxonomy_menu:taxonomy_menu

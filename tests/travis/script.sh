@@ -7,7 +7,7 @@
 #     script.sh
 #
 # DESCRIPTION
-#     Runs static code analysis and automated tests.
+#     Runs automated tests.
 
 cd "$(dirname "$0")"
 

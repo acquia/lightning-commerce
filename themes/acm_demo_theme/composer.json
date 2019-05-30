@@ -1,0 +1,6 @@
+{
+    "name": "drupal/acm_demo",
+    "type": "drupal-theme",
+    "description": "Demo theme for Acquia Commerce Manager.",
+    "license": "GPL-2.0-or-later"
+}
