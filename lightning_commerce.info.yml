@@ -16,5 +16,4 @@ dependencies:
 themes:
   - bartik
 
-base profile:
-  name: lightning
+'base profile': lightning
