@@ -1,0 +1,5 @@
+---
+acquia/lightning_commerce:
+  type: drupal-profile
+
+drupal/acquia_commercemanager: []

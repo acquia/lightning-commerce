@@ -1,62 +1,63 @@
+---
 language: php
 
-php:
-- 7.1
-- 7.2
+php: "7.2"
+
+addons:
+  chrome: stable
+
+cache:
+  directories:
+    - "$HOME/.composer/cache"
+    - "$HOME/.drush/cache"
+    - "${TMPDIR:-/tmp}/phpstan/cache"
 
 env:
-- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=^8.7 LIGHTNING=^3.3 ACM="1.x-dev"
-- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=^8.7 LIGHTNING=^3.3 ACM="^1"
-- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="1.x-dev"
-- SYMFONY_DEPRECATIONS_HELPER=disabled DRUPAL=8.7.x-dev LIGHTNING=^3.1 ACM="^1"
+  global:
+    - ORCA_SUT_NAME=acquia/lightning_commerce
+    - ORCA_SUT_BRANCH=master
+    - ORCA_VERSION=master
+    - ORCA_PACKAGES_CONFIG_ALTER=../lightning-commerce/tests/packages_alter.yml
+    - ORCA_FIXTURE_PROFILE=lightning_commerce
+    - ORCA_TELEMETRY_ENABLE=TRUE
+
+matrix:
+  fast_finish: true
+  include:
+    - { name: "Static code analysis", env: ORCA_JOB=STATIC_CODE_ANALYSIS }
+    - { name: "Deprecated code scan", env: ORCA_JOB=DEPRECATED_CODE_SCAN_SUT }
+    - { name: "Isolated test w/ recommended package versions", env: ORCA_JOB=ISOLATED_RECOMMENDED }
+    - { name: "Integrated test w/ recommended package versions", env: ORCA_JOB=INTEGRATED_RECOMMENDED }
+    # Lightning 4.x is incompatible with Drupal Core 8.6, so Lightning Commerce
+    # is, too, by extension.
+    # @todo Uncomment this job once Drupal 8.7 is the "previous" version.
+    # - { name: "Integrated test w/ recommended package versions & previous minor release of Drupal core", env: ORCA_JOB=CORE_PREVIOUS }
+    - { name: "Isolated test w/ dev package versions", env: ORCA_JOB=ISOLATED_DEV }
+    - { name: "Integrated test w/ dev package versions", env: ORCA_JOB=INTEGRATED_DEV }
+    - { name: "Integrated test w/ dev package versions & next minor dev version of Drupal core", env: ORCA_JOB=CORE_NEXT }
+  allow_failures:
+    - env: ORCA_JOB=ISOLATED_DEV
+    - env: ORCA_JOB=INTEGRATED_DEV
+    - env: ORCA_JOB=CORE_NEXT
+    # Temporary allowances.
+    - env: ORCA_JOB=DEPRECATED_CODE_SCAN_SUT
 
 before_install:
-# items for phpcs
-- composer global require drupal/coder ^8.2@stable
-- export COMPOSER_HOME=`composer config home`
-- export PATH="$PATH:$COMPOSER_HOME/vendor/bin" 
-- phpcs --config-set installed_paths $COMPOSER_HOME/vendor/drupal/coder/coder_sniffer
-- phpcs --standard=Drupal .
-install:
-# Create the MySQL database and add a user for testing.
-- mysql -u root -e "CREATE DATABASE testing; CREATE USER 'testing'@'localhost' IDENTIFIED BY 'testing'; GRANT ALL ON testing.* TO 'testing'@'localhost';"
-- export SIMPLETEST_DB="mysql://testing:testing@localhost/testing"
-- export SIMPLETEST_BASE_URL=http://localhost:8080
-# first clone everything also into a subfolder, via a parent build folder
-- mkdir lightning-commerce
-- mv `ls -A | grep -v "^lightning-commerce"` ./lightning-commerce
-- composer clearcache
-- composer self-update
-- composer create-project drupal/drupal:${DRUPAL} drupal --no-interaction --no-install
-# Add packages required by acm.
-- cd drupal
-# see https://github.com/drupal-composer/drupal-project/issues/175
-- composer config --unset repositories.0
-- composer config repositories.drupal composer https://packages.drupal.org/8
-- composer config repositories.assets composer https://asset-packagist.org
-- composer require j7mbo/twitter-api-php league/oauth2-server:~6.0 webflo/drupal-core-strict:~8.7.0 'phpdocumentor/reflection-docblock:^3.0||^4.0'
-- composer require acquia/lightning:${LIGHTNING}
-- mkdir -p profiles/contrib
-- mv ../lightning-commerce profiles/contrib
-- ls profiles/contrib
-- composer require drush/drush drupal/admin_toolbar drupal/acquia_commercemanager:${ACM}
-- composer run-script drupal-phpunit-upgrade
-- composer install
-# Install drupal.
-- ./vendor/bin/drush --verbose site-install lightning_commerce --db-url=mysql://root:@127.0.0.1/drupal --yes
-# Enable the acm suite of modules.
-- ./vendor/bin/drush en -y acm acm_cart acm_checkout acm_customer acm_exception acm_payment acm_product acm_promotion acm_sku acm_sku_position
-# Enable simpletest for module tests
-- ./vendor/bin/drush en -y simpletest
-before_script:
-- phpenv config-rm xdebug.ini
-- mkdir -p $TRAVIS_BUILD_DIR/drupal/sites/simpletest && chmod 777 $TRAVIS_BUILD_DIR/drupal/sites/simpletest -fR
-- cd $TRAVIS_BUILD_DIR/drupal
-- ./vendor/bin/drush runserver localhost:8080 &
-- echo $! > drush_runserver.pid
-- until netstat -an 2>/dev/null | grep '8080.*LISTEN'; do true; done
+  - git clone --branch ${ORCA_VERSION} --depth 1 https://github.com/acquia/orca.git ../orca
+  - ../orca/bin/travis/before_install.sh
+
+install: ../orca/bin/travis/install.sh
+
+before_script: ../orca/bin/travis/before_script.sh
+
 script:
-- mkdir -p $TRAVIS_BUILD_DIR/drupal/modules/contrib/acquia_commercemanager/tests/logs
-# Run behat tests.
-- ./vendor/bin/phpunit -c modules/contrib/acquia_commercemanager/phpunit.xml modules/contrib/acquia_commercemanager --debug -v --stop-on-failure
-- kill -s TERM `cat drush_runserver.pid`
+  - ../orca/bin/travis/script.sh
+  - ./tests/travis/script.sh
+
+before_cache: ../orca/bin/travis/before_cache.sh
+
+after_success: ../orca/bin/travis/after_success.sh
+
+after_failure: ../orca/bin/travis/after_failure.sh
+
+after_script: ../orca/bin/travis/after_script.sh

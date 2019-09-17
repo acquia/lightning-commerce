@@ -1,5 +1,5 @@
 name: ACM Demo theme
-description: "Demo theme for Acquia Commerce Manager"
+description: "Demo theme for Acquia Commerce Manager."
 core: 8.x
 type: theme
 base theme: classy

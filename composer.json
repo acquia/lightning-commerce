@@ -1,46 +1,23 @@
 {
     "name": "acquia/lightning_commerce",
-    "description": "Lightning for Commerce distribution provides simply integration with Acquia Commerce Manager.",
     "type": "drupal-profile",
-    "license": "GPL-2.0+",
-    "authors":[{
-        "name": "Acquia Engineering",
-        "homepage": "https://www.acquia.com",
-        "role": "Maintainer"
-    }],
-    "minimum-stability": "dev",
-    "prefer-stable": true,
-    "require": {
-	"php": "^7.1",
-        "acquia/lightning": "~3.3",
-        "drupal/drupal-extension": "~3.4",
-        "drupal/config_rewrite": "~1.1",
-        "drupal/core": "^8",
-        "drupal/acquia_commercemanager": "~1.12",
-        "drupal/admin_toolbar": "~1.21",
-        "drupal/migrate_default_content": "~2.0.0@ALPHA",
-        "drupal/page_manager": "~4.0.0@BETA",
-        "drupal/taxonomy_menu": "3.x-dev"
-    },
-    "repositories": [
+    "description": "Lightning for Commerce distribution provides simply integration with Acquia Commerce Manager.",
+    "license": "GPL-2.0-or-later",
+    "authors": [
         {
-            "type": "composer",
-            "url": "https://packages.drupal.org/8"
-        },
-        {
-            "type": "composer",
-            "url": "https://asset-packagist.org"
+            "name": "Acquia Engineering",
+            "homepage": "https://www.acquia.com",
+            "role": "Maintainer"
         }
     ],
+    "require": {
+        "acquia/lightning": ">=3.3",
+        "drupal/acquia_commercemanager": "^1.12",
+        "drupal/admin_toolbar": "^1.27"
+    },
     "extra": {
-        "enable-patching": true,
-        "patches": {
-            "drupal/core": {
-                "2599228 - Programmatically created translatable content type returns SQL error on content creation": "https://www.drupal.org/files/issues/2599228-31.patch"
-            },
-            "drupal/page_manager": {
-                "2876880 - page_variant entity type does not exist when installing or enabling":"https://www.drupal.org/files/issues/2876880-page-varient-cache-2.patch"
-            }
+        "branch-alias": {
+            "dev-master": "1.x-dev"
         }
     }
 }

@@ -11,7 +11,7 @@ encounter an issue. We always appreciate a well-written, thorough bug report,
 and will thank you for it.
 
 Before submitting an issue please check that the [issue database](
-https://github.com/acquia/lightning-commerce/issues
+https://github.com/acquia/lightning_commerce/issues
 ) does not already contain the same problem or suggestion.
 
 If you find a match you can use the "subscribe" button to get notified on
@@ -24,7 +24,7 @@ resolve the issue then please leave a comment.
 Pull requests are always welcome. Not sure if that typo is worth a pull
 request? Found a bug and know how to fix it? Do it! We appreciate the help.
 Any significant improvement should be documented as [a GitHub issue](
-https://github.com/acquia/lightning-commerce/issues
+https://github.com/acquia/lightning_commerce/issues
 ) before starting working on it.
 
 We are always thrilled to receive pull requests and we do our best to process
